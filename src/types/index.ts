@@ -6,6 +6,7 @@ export interface User {
   username: string;
   fullName: string;
   email: string;
+  role: 'student' | 'admin' | 'tutor';   // <-- ADDED
   profilePicture: string;
   countryCode: string;
   mobileNumber: string;
@@ -47,6 +48,7 @@ export interface RegisterData {
   password: string;
   confirmPassword: string;
   termsAccepted: boolean;
+  videoRecord?: string;                  // <-- ADDED
 }
 
 export interface PasswordResetRequest {
