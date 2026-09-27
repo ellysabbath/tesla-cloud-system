@@ -1,0 +1,50 @@
+/* 1. Font imports MUST come first (before Tailwind) */
+@import url('https://fonts.googleapis.com/css2?family=Bell+MT&display=swap');
+
+/* 2. Tailwind v4 single import */
+@import "tailwindcss";
+
+/* 3. Custom theme tokens (Tailwind v4 way) */
+@theme {
+  --font-bell: 'Bell MT', 'Times New Roman', serif;
+
+  --color-primary: #000000;
+  --color-secondary: #ffffff;
+  --color-gray-light: #f5f5f5;
+  --color-gray-medium: #e0e0e0;
+  --color-gray-dark: #666666;
+  --color-accent: #0066cc;
+  --color-danger: #cc0000;
+  --color-success: #00aa00;
+}
+
+/* 4. Base layer — global element styles */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: 'Bell MT', 'Times New Roman', serif;
+    line-height: 1.6;
+  }
+
+  body {
+    color: var(--color-primary);
+    background-color: var(--color-secondary);
+  }
+
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+
+  button {
+    cursor: pointer;
+    font-family: inherit;
+  }
+}
