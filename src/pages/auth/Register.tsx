@@ -1,29 +1,54 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import type { RegisterData } from '../../types';
-import { authApi, fileToBase64, getDeviceName, getIpAddress } from '../../api/api';
+import {
+  authApi,
+  fileToBase64,
+  getDeviceName,
+  getIpAddress,
+} from '../../api/api';
 
+// ============================================================
+// Types
+// ============================================================
+type CameraStatus =
+  | 'idle'
+  | 'requesting'
+  | 'recording'
+  | 'done'
+  | 'denied'
+  | 'error';
+
+const RECORDING_SECONDS = 5;
+
+// ============================================================
+// Component
+// ============================================================
 const Register: React.FC = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState(1);
+
+  // ---------- UI state ----------
+  const [step, setStep] = useState<1 | 2>(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [profilePreview, setProfilePreview] = useState<string>('');
+  const [info, setInfo] = useState('');
+  const [profilePreview, setProfilePreview] = useState('');
 
-  // ---------- Video recording state ----------
+  // ---------- Camera / recording state ----------
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasStartedRef = useRef(false);
 
-  const [cameraStatus, setCameraStatus] = useState<
-    'idle' | 'requesting' | 'recording' | 'done' | 'denied' | 'error'
-  >('idle');
-  const [countdown, setCountdown] = useState(5);
-  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string>('');
+  const [cameraStatus, setCameraStatus] = useState<CameraStatus>('idle');
+  const [countdown, setCountdown] = useState(RECORDING_SECONDS);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState('');
 
+  // ---------- Form data ----------
   const [formData, setFormData] = useState<RegisterData>({
     profilePicture: null,
     fullName: '',
@@ -39,6 +64,7 @@ const Register: React.FC = () => {
     termsAccepted: false,
   });
 
+  // ---------- Static lists ----------
   const countryCodes = [
     { code: '+255', country: 'Tanzania' },
     { code: '+254', country: 'Kenya' },
@@ -52,15 +78,54 @@ const Register: React.FC = () => {
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
 
-  const years = Array.from({ length: 50 }, (_, i) => (new Date().getFullYear() - i).toString());
+  const years = Array.from({ length: 50 }, (_, i) =>
+    (new Date().getFullYear() - i).toString()
+  );
   const days = Array.from({ length: 31 }, (_, i) => (i + 1).toString());
 
-  const RECORDING_SECONDS = 5;
+  // ============================================================
+  // Camera cleanup helpers
+  // ============================================================
+  const stopStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }, []);
 
-  // ---------- Start camera automatically on step 2 ----------
+  const stopRecorderIfActive = useCallback(() => {
+    try {
+      const rec = mediaRecorderRef.current;
+      if (rec && rec.state !== 'inactive') rec.stop();
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const clearCountdown = useCallback(() => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+  }, []);
+
+  const hardResetCamera = useCallback(() => {
+    clearCountdown();
+    stopRecorderIfActive();
+    stopStream();
+    chunksRef.current = [];
+    mediaRecorderRef.current = null;
+    hasStartedRef.current = false;
+    setCameraStatus('idle');
+    setCountdown(RECORDING_SECONDS);
+    setVideoPreviewUrl('');
+  }, [clearCountdown, stopRecorderIfActive, stopStream]);
+
+  // ============================================================
+  // Auto-start camera + record on step 2
+  // ============================================================
   useEffect(() => {
     if (step !== 2) return;
-    if (cameraStatus !== 'idle') return;
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
 
     let cancelled = false;
 
@@ -83,7 +148,6 @@ const Register: React.FC = () => {
           videoRef.current.play().catch(() => {});
         }
 
-        // Choose a supported mime type
         const mimeType =
           MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
             ? 'video/webm;codecs=vp9'
@@ -93,7 +157,10 @@ const Register: React.FC = () => {
             ? 'video/webm'
             : '';
 
-        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        const recorder = new MediaRecorder(
+          stream,
+          mimeType ? { mimeType } : undefined
+        );
         mediaRecorderRef.current = recorder;
         chunksRef.current = [];
 
@@ -101,7 +168,7 @@ const Register: React.FC = () => {
           if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
         };
 
-        recorder.onstop = async () => {
+        recorder.onstop = () => {
           const blob = new Blob(chunksRef.current, { type: 'video/webm' });
           const reader = new FileReader();
           reader.onloadend = () => {
@@ -111,9 +178,8 @@ const Register: React.FC = () => {
           };
           reader.readAsDataURL(blob);
 
-          // Stop camera tracks
-          streamRef.current?.getTracks().forEach((t) => t.stop());
-          streamRef.current = null;
+          stopStream();
+          clearCountdown();
           setCameraStatus('done');
         };
 
@@ -121,27 +187,24 @@ const Register: React.FC = () => {
         setCameraStatus('recording');
         setCountdown(RECORDING_SECONDS);
 
-        // Countdown + auto-stop
         let remaining = RECORDING_SECONDS;
-        const interval = setInterval(() => {
+        countdownIntervalRef.current = setInterval(() => {
           remaining -= 1;
           setCountdown(remaining);
           if (remaining <= 0) {
-            clearInterval(interval);
+            clearCountdown();
             try {
               recorder.stop();
             } catch {
-              // ignore
+              /* ignore */
             }
           }
         }, 1000);
       } catch (err) {
         console.error('Camera error:', err);
-        if ((err as Error).name === 'NotAllowedError') {
-          setCameraStatus('denied');
-        } else {
-          setCameraStatus('error');
-        }
+        setCameraStatus(
+          (err as Error).name === 'NotAllowedError' ? 'denied' : 'error'
+        );
       }
     };
 
@@ -149,25 +212,30 @@ const Register: React.FC = () => {
 
     return () => {
       cancelled = true;
-      // Cleanup if user navigates away
-      try {
-        mediaRecorderRef.current?.state === 'recording' &&
-          mediaRecorderRef.current?.stop();
-      } catch {
-        // ignore
-      }
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
-  // ---------- Form handlers ----------
+  // ============================================================
+  // Hard cleanup on unmount
+  // ============================================================
+  useEffect(() => {
+    return () => {
+      clearCountdown();
+      stopRecorderIfActive();
+      stopStream();
+    };
+  }, [clearCountdown, stopRecorderIfActive, stopStream]);
+
+  // ============================================================
+  // Form handlers
+  // ============================================================
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >
   ) => {
     const { name, value, type } = e.target;
-
     if (type === 'checkbox') {
       const checked = (e.target as HTMLInputElement).checked;
       setFormData((prev) => ({ ...prev, [name]: checked }));
@@ -183,78 +251,113 @@ const Register: React.FC = () => {
     }));
   };
 
-  const handleProfilePictureChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProfilePictureChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setFormData((prev) => ({ ...prev, profilePicture: file }));
-      const base64 = await fileToBase64(file);
-      setProfilePreview(base64);
-    }
+    if (!file) return;
+    setFormData((prev) => ({ ...prev, profilePicture: file }));
+    const base64 = await fileToBase64(file);
+    setProfilePreview(base64);
   };
 
-  const validateStep1 = () => {
+  // ============================================================
+  // Validation
+  // ============================================================
+  const validateStep1 = (): string => {
     if (!formData.fullName.trim()) return 'Full name is required';
     if (!formData.email.trim()) return 'Email is required';
+    if (!/^\S+@\S+\.\S+$/.test(formData.email))
+      return 'Please enter a valid email';
     if (!formData.mobileNumber.trim()) return 'Mobile number is required';
     if (!formData.region.trim()) return 'Region is required';
     if (!formData.currentCity.trim()) return 'Current city is required';
     return '';
   };
 
-  const validateStep2 = () => {
-    if (!formData.dateOfBirth.year || !formData.dateOfBirth.month || !formData.dateOfBirth.day) {
-      return 'Complete date of birth is required';
-    }
+  const validateStep2 = (): string => {
+    const { year, month, day } = formData.dateOfBirth;
+    if (!year || !month || !day) return 'Complete date of birth is required';
     if (!formData.password) return 'Password is required';
-    if (formData.password.length < 6) return 'Password must be at least 6 characters';
-    if (formData.password !== formData.confirmPassword) return 'Passwords do not match';
-    if (!formData.termsAccepted) return 'You must accept the terms and policies';
+    if (formData.password.length < 6)
+      return 'Password must be at least 6 characters';
+    if (formData.password !== formData.confirmPassword)
+      return 'Passwords do not match';
+    if (!formData.termsAccepted)
+      return 'You must accept the terms and policies';
     return '';
   };
 
   const handleNext = () => {
-    const validationError = validateStep1();
-    if (validationError) {
-      setError(validationError);
+    const err = validateStep1();
+    if (err) {
+      setError(err);
       return;
     }
     setError('');
     setStep(2);
   };
 
+  const handleBack = () => {
+    setError('');
+    setInfo('');
+    setStep(1);
+  };
+
+  // ============================================================
+  // Submit — backend sends verification email, no token returned
+  // ============================================================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const validationError = validateStep2();
-    if (validationError) {
-      setError(validationError);
+
+    const err = validateStep2();
+    if (err) {
+      setError(err);
       return;
     }
 
     setIsLoading(true);
     setError('');
+    setInfo('');
 
     try {
-      const ipAddress = await getIpAddress();
-      const deviceName = getDeviceName();
-
-      console.log('IP Address:', ipAddress);
-      console.log('Device Name:', deviceName);
-      console.log('Video recorded (base64 length):', formData.videoRecord?.length || 0);
+      // Best-effort metadata (backend tolerates empty values)
+      await getIpAddress().catch(() => '');
+      getDeviceName();
 
       const response = await authApi.register(formData);
 
-      if (response.success) {
-        navigate('/acc-verify?token=demo-uuid-token');
-      } else {
-        setError(response.message);
+      if (!response.success) {
+        setError(response.message || 'Registration failed. Please try again.');
+        return;
       }
-    } catch (err) {
-      setError('An error occurred. Please try again.');
+
+      // Success — the backend has emailed the user a verification link.
+      // Stay on this page briefly with a clear message, then route to sign-in.
+      setInfo(
+        'Account created. We have emailed you your username and a verification link. Please check your inbox (and spam folder).'
+      );
+
+      setTimeout(() => {
+        navigate('/signin', {
+          state: {
+            info: 'Check your email inbox for the verification link, then sign in.',
+          },
+        });
+      }, 4000);
+    } catch (e) {
+      console.error('Register submit error:', e);
+      setError(
+        'Could not reach the server. Please check your connection and try again.'
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
+  // ============================================================
+  // Render
+  // ============================================================
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4">
       <div className="max-w-2xl w-full">
@@ -271,7 +374,11 @@ const Register: React.FC = () => {
         <div className="bg-white rounded-lg shadow-md p-8">
           {/* Progress Steps */}
           <div className="flex items-center justify-center mb-8">
-            <div className={`flex items-center ${step >= 1 ? 'text-black' : 'text-gray-400'}`}>
+            <div
+              className={`flex items-center ${
+                step >= 1 ? 'text-black' : 'text-gray-400'
+              }`}
+            >
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center ${
                   step >= 1 ? 'bg-black text-white' : 'bg-gray-200'
@@ -282,7 +389,11 @@ const Register: React.FC = () => {
               <span className="ml-2 text-sm">Personal Info</span>
             </div>
             <div className="w-16 h-px bg-gray-300 mx-4" />
-            <div className={`flex items-center ${step >= 2 ? 'text-black' : 'text-gray-400'}`}>
+            <div
+              className={`flex items-center ${
+                step >= 2 ? 'text-black' : 'text-gray-400'
+              }`}
+            >
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center ${
                   step >= 2 ? 'bg-black text-white' : 'bg-gray-200'
@@ -294,13 +405,37 @@ const Register: React.FC = () => {
             </div>
           </div>
 
+          {/* Alerts */}
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6 text-sm">
               {error}
+            </div>
+          )}
+          {info && (
+            <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded mb-6 text-sm">
+              <div className="flex items-start gap-2">
+                <svg
+                  className="w-5 h-5 shrink-0 mt-0.5 text-blue-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                  />
+                </svg>
+                <span>{info}</span>
+              </div>
             </div>
           )}
 
           <form onSubmit={handleSubmit}>
+            {/* ============================================================
+                STEP 1 — Personal Info
+            ============================================================ */}
             {step === 1 && (
               <div className="space-y-4">
                 {/* Profile Picture */}
@@ -313,7 +448,11 @@ const Register: React.FC = () => {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <svg className="w-12 h-12 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                      <svg
+                        className="w-12 h-12 text-gray-400"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
                         <path
                           fillRule="evenodd"
                           d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
@@ -344,7 +483,9 @@ const Register: React.FC = () => {
 
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Country Code</label>
+                    <label className="block text-sm font-medium mb-1">
+                      Country Code
+                    </label>
                     <select
                       name="countryCode"
                       value={formData.countryCode}
@@ -405,9 +546,12 @@ const Register: React.FC = () => {
               </div>
             )}
 
+            {/* ============================================================
+                STEP 2 — Account Setup (camera + password + terms)
+            ============================================================ */}
             {step === 2 && (
               <div className="space-y-4">
-                {/* ============ AUTO CAMERA RECORDING ============ */}
+                {/* Camera + auto-record */}
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                   <div className="bg-black text-white px-4 py-2 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -416,8 +560,10 @@ const Register: React.FC = () => {
                       )}
                       <span className="text-sm font-medium">
                         {cameraStatus === 'idle' && 'Preparing camera...'}
-                        {cameraStatus === 'requesting' && 'Requesting camera access...'}
-                        {cameraStatus === 'recording' && `Recording... ${countdown}s`}
+                        {cameraStatus === 'requesting' &&
+                          'Requesting camera access...'}
+                        {cameraStatus === 'recording' &&
+                          `Recording... ${countdown}s`}
                         {cameraStatus === 'done' && 'Recording complete'}
                         {cameraStatus === 'denied' && 'Camera access denied'}
                         {cameraStatus === 'error' && 'Camera unavailable'}
@@ -431,8 +577,8 @@ const Register: React.FC = () => {
                   </div>
 
                   <div className="bg-gray-900 aspect-video relative flex items-center justify-center">
-                    {/* Live camera preview */}
-                    {cameraStatus === 'recording' || cameraStatus === 'requesting' ? (
+                    {(cameraStatus === 'recording' ||
+                      cameraStatus === 'requesting') && (
                       <video
                         ref={videoRef}
                         autoPlay
@@ -440,9 +586,8 @@ const Register: React.FC = () => {
                         playsInline
                         className="w-full h-full object-cover"
                       />
-                    ) : null}
+                    )}
 
-                    {/* Recorded playback */}
                     {cameraStatus === 'done' && videoPreviewUrl && (
                       <video
                         src={videoPreviewUrl}
@@ -451,8 +596,8 @@ const Register: React.FC = () => {
                       />
                     )}
 
-                    {/* Denied / error states */}
-                    {(cameraStatus === 'denied' || cameraStatus === 'error') && (
+                    {(cameraStatus === 'denied' ||
+                      cameraStatus === 'error') && (
                       <div className="text-center text-gray-300 p-6">
                         <svg
                           className="w-12 h-12 mx-auto mb-3 text-gray-500"
@@ -472,10 +617,16 @@ const Register: React.FC = () => {
                             ? 'Camera access was denied. You can continue without recording.'
                             : 'Camera is not available. You can continue without recording.'}
                         </p>
+                        <button
+                          type="button"
+                          onClick={hardResetCamera}
+                          className="mt-3 text-xs text-blue-400 hover:underline"
+                        >
+                          Try again
+                        </button>
                       </div>
                     )}
 
-                    {/* Idle shimmer */}
                     {cameraStatus === 'idle' && (
                       <div className="text-gray-500 text-sm">
                         Initializing camera...
@@ -484,8 +635,9 @@ const Register: React.FC = () => {
                   </div>
 
                   <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 text-center">
-                    A short video is recorded automatically for identity verification.
-                    Your privacy is respected — the recording is stored securely.
+                    A short video is recorded automatically for identity
+                    verification. Your privacy is respected — the recording is
+                    stored securely.
                   </div>
                 </div>
 
@@ -497,7 +649,9 @@ const Register: React.FC = () => {
                   <div className="grid grid-cols-3 gap-4">
                     <select
                       value={formData.dateOfBirth.year}
-                      onChange={(e) => handleDateChange('year', e.target.value)}
+                      onChange={(e) =>
+                        handleDateChange('year', e.target.value)
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
                     >
                       <option value="">Year</option>
@@ -509,7 +663,9 @@ const Register: React.FC = () => {
                     </select>
                     <select
                       value={formData.dateOfBirth.month}
-                      onChange={(e) => handleDateChange('month', e.target.value)}
+                      onChange={(e) =>
+                        handleDateChange('month', e.target.value)
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
                     >
                       <option value="">Month</option>
@@ -524,7 +680,9 @@ const Register: React.FC = () => {
                     </select>
                     <select
                       value={formData.dateOfBirth.day}
-                      onChange={(e) => handleDateChange('day', e.target.value)}
+                      onChange={(e) =>
+                        handleDateChange('day', e.target.value)
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
                     >
                       <option value="">Day</option>
@@ -581,9 +739,15 @@ const Register: React.FC = () => {
                     onChange={handleChange}
                     className="mt-1 mr-2"
                   />
-                  <label htmlFor="termsAccepted" className="text-sm text-gray-600">
+                  <label
+                    htmlFor="termsAccepted"
+                    className="text-sm text-gray-600"
+                  >
                     I agree to the{' '}
-                    <Link to="/terms" className="text-blue-600 hover:underline">
+                    <Link
+                      to="/terms"
+                      className="text-blue-600 hover:underline"
+                    >
                       Terms and Policies
                     </Link>
                   </label>
@@ -593,8 +757,9 @@ const Register: React.FC = () => {
                   <Button
                     type="button"
                     variant="secondary"
-                    onClick={() => setStep(1)}
+                    onClick={handleBack}
                     fullWidth
+                    disabled={isLoading}
                   >
                     Back
                   </Button>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 interface SidebarProps {
@@ -10,11 +10,50 @@ interface NavLink {
   label: string;
   path: string;
   icon: React.ReactNode;
+  badge?: number;
+}
+
+// Shape of the recorder state pushed from TakeExam
+interface RecorderPayload {
+  active: boolean;
+  status:
+    | 'idle'
+    | 'requesting'
+    | 'recording'
+    | 'stopped'
+    | 'denied'
+    | 'error';
+  elapsedSeconds: number;
+  stream: MediaStream | null;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const location = useLocation();
   const navigate = useNavigate();
+
+  // ---------- Recorder panel state (driven by events from TakeExam) ----------
+  const [recorder, setRecorder] = useState<RecorderPayload | null>(null);
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<RecorderPayload | null>).detail;
+      setRecorder(detail);
+    };
+    window.addEventListener('tci:recorder', handler);
+    return () => window.removeEventListener('tci:recorder', handler);
+  }, []);
+
+  // Attach the live stream to the sidebar preview video
+  useEffect(() => {
+    if (!recorder?.stream) return;
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.srcObject !== recorder.stream) {
+      el.srcObject = recorder.stream;
+      el.play().catch(() => {});
+    }
+  }, [recorder?.stream]);
 
   const navLinks: NavLink[] = [
     {
@@ -48,6 +87,26 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       ),
     },
     {
+      label: 'Examination Lists',
+      path: '/candidate/examination-lists',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+        </svg>
+      ),
+    },
+    {
+      label: 'My Exams',
+      path: '/candidate/exams',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+    },
+    {
       label: 'My Certificates',
       path: '/my-certificates',
       icon: (
@@ -71,11 +130,31 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     },
   ];
 
-  const isActive = (path: string) => location.pathname === path;
+  const isActive = (path: string) => {
+    if (path === '/dashboard') return location.pathname === '/dashboard';
+    return (
+      location.pathname === path || location.pathname.startsWith(path + '/')
+    );
+  };
+
+  const handleLinkClick = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      onClose();
+    }
+  };
 
   const handleLogout = () => {
+    localStorage.removeItem('user');
     localStorage.removeItem('keepMeLoggedIn');
     navigate('/signin');
+  };
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m.toString().padStart(2, '0')}:${sec
+      .toString()
+      .padStart(2, '0')}`;
   };
 
   return (
@@ -98,8 +177,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         `}
       >
         {/* Header */}
-        <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
-          <Link to="/dashboard" className="text-lg font-bold tracking-tight" onClick={onClose}>
+        <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 shrink-0">
+          <Link
+            to="/dashboard"
+            className="text-lg font-bold tracking-tight"
+            onClick={handleLinkClick}
+          >
             TESLA CLOUD
           </Link>
           <button
@@ -120,35 +203,139 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             Menu
           </p>
           <ul className="space-y-1">
-            {navLinks.map((link) => (
-              <li key={link.path}>
-                <Link
-                  to={link.path}
-                  onClick={() => {
-                    if (window.innerWidth < 1024) onClose();
-                  }}
-                  className={`
-                    flex items-center gap-3 px-3 py-2.5 rounded-lg
-                    text-sm font-medium
-                    transition-colors duration-150
-                    ${isActive(link.path)
-                      ? 'bg-black text-white'
-                      : 'text-gray-700 hover:bg-gray-100 hover:text-black'
-                    }
-                  `}
-                >
-                  <span className={isActive(link.path) ? 'text-white' : 'text-gray-500'}>
-                    {link.icon}
-                  </span>
-                  {link.label}
-                </Link>
-              </li>
-            ))}
+            {navLinks.map((link) => {
+              const active = isActive(link.path);
+              return (
+                <li key={link.path}>
+                  <Link
+                    to={link.path}
+                    onClick={handleLinkClick}
+                    className={`
+                      flex items-center gap-3 px-3 py-2.5 rounded-lg
+                      text-sm font-medium
+                      transition-colors duration-150
+                      ${
+                        active
+                          ? 'bg-black text-white'
+                          : 'text-gray-700 hover:bg-gray-100 hover:text-black'
+                      }
+                    `}
+                  >
+                    <span className={active ? 'text-white' : 'text-gray-500'}>
+                      {link.icon}
+                    </span>
+                    <span className="flex-1">{link.label}</span>
+                    {link.badge && link.badge > 0 && (
+                      <span
+                        className={`
+                          text-[10px] font-bold px-2 py-0.5 rounded-full
+                          ${
+                            active
+                              ? 'bg-white text-black'
+                              : 'bg-black text-white'
+                          }
+                        `}
+                      >
+                        {link.badge}
+                      </span>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
+
+          {/* ============================================================
+              RECORDER PANEL — appears below Settings when an exam
+              is in progress
+          ============================================================ */}
+          {recorder && recorder.active && (
+            <div className="mt-4 rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+              {/* Header */}
+              <div className="flex items-center justify-between px-2.5 py-1.5 bg-gray-900 text-white">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {recorder.status === 'recording' ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest truncate">
+                        Recording
+                      </span>
+                    </>
+                  ) : recorder.status === 'requesting' ? (
+                    <span className="text-[10px] font-bold uppercase tracking-widest truncate">
+                      Starting…
+                    </span>
+                  ) : recorder.status === 'denied' ? (
+                    <span className="text-[10px] font-bold uppercase tracking-widest truncate">
+                      Camera denied
+                    </span>
+                  ) : recorder.status === 'error' ? (
+                    <span className="text-[10px] font-bold uppercase tracking-widest truncate">
+                      Camera error
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold uppercase tracking-widest truncate">
+                      Camera
+                    </span>
+                  )}
+                </div>
+                {recorder.status === 'recording' && (
+                  <span className="text-[10px] font-mono tabular-nums text-white/80 shrink-0">
+                    {formatTime(recorder.elapsedSeconds)}
+                  </span>
+                )}
+              </div>
+
+              {/* Video preview */}
+              <div className="bg-black aspect-video relative">
+                {recorder.status === 'recording' ||
+                recorder.status === 'requesting' ? (
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : recorder.status === 'denied' ||
+                  recorder.status === 'error' ? (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-400 p-3 text-center">
+                    <svg
+                      className="w-7 h-7 mb-1"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      />
+                    </svg>
+                    <p className="text-[9px]">
+                      Camera unavailable — you may still take the exam.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-400 text-[10px]">
+                    Initializing…
+                  </div>
+                )}
+              </div>
+
+              {/* Footer hint */}
+              <div className="px-2.5 py-1 bg-gray-50 border-t border-gray-100">
+                <p className="text-[9px] text-gray-500 text-center leading-tight">
+                  Session recorded for identity verification.
+                </p>
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* Logout */}
-        <div className="p-3 border-t border-gray-200">
+        <div className="p-3 border-t border-gray-200 shrink-0">
           <button
             onClick={handleLogout}
             className="

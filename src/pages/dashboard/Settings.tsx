@@ -1,24 +1,37 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import { authApi } from '../../api/api';
+import { useAuth } from '../../context/AuthContext';
 
-type SettingsTab = 'account' | 'security' | 'notifications' | 'appearance' | 'privacy';
+type SettingsTab =
+  | 'account'
+  | 'security'
+  | 'notifications'
+  | 'appearance'
+  | 'privacy';
 
+// ============================================================
+// Component
+// ============================================================
 const Settings: React.FC = () => {
+  const { user, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>('account');
   const [savedMessage, setSavedMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  // ---------- Account ----------
+  // ---------- Account form ----------
   const [account, setAccount] = useState({
-    fullName: 'Student Name',
-    email: 'student@teslacloud.ac.tz',
-    mobile: '+255 712 345 678',
-    region: 'Dar es Salaam',
-    city: 'Dar es Salaam',
-    education: 'Secondary Education',
-    bio: '',
+    fullName: '',
+    email: '',
+    mobile: '',
+    countryCode: '+255',
+    region: '',
+    city: '',
+    education: '',
   });
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
 
   // ---------- Security ----------
   const [security, setSecurity] = useState({
@@ -27,6 +40,7 @@ const Settings: React.FC = () => {
     confirmPassword: '',
     twoFactor: false,
   });
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
   // ---------- Notifications ----------
   const [notifications, setNotifications] = useState({
@@ -53,12 +67,40 @@ const Settings: React.FC = () => {
     allowMessages: true,
   });
 
-  // ---------- Handlers ----------
+  // ============================================================
+  // Prefill account from AuthContext
+  // ============================================================
+  useEffect(() => {
+    if (!user) return;
+    setAccount({
+      fullName: user.fullName ?? '',
+      email: user.email ?? '',
+      mobile: user.mobileNumber ?? '',
+      countryCode: user.countryCode ?? '+255',
+      region: user.region ?? '',
+      city: user.currentCity ?? '',
+      education: user.educationalBackground ?? '',
+    });
+  }, [user]);
+
+  // ============================================================
+  // Flash helpers
+  // ============================================================
   const flashSaved = (msg = 'Changes saved successfully') => {
     setSavedMessage(msg);
+    setErrorMessage('');
     setTimeout(() => setSavedMessage(''), 2500);
   };
 
+  const flashError = (msg: string) => {
+    setErrorMessage(msg);
+    setSavedMessage('');
+    setTimeout(() => setErrorMessage(''), 3500);
+  };
+
+  // ============================================================
+  // Handlers
+  // ============================================================
   const handleAccountChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
@@ -78,12 +120,94 @@ const Settings: React.FC = () => {
     key: string
   ) => {
     if (group === 'notifications') {
-      setNotifications({ ...notifications, [key]: !notifications[key as keyof typeof notifications] });
+      setNotifications({
+        ...notifications,
+        [key]: !notifications[key as keyof typeof notifications],
+      });
     } else {
-      setPrivacy({ ...privacy, [key]: !privacy[key as keyof typeof privacy] });
+      setPrivacy({
+        ...privacy,
+        [key]: !privacy[key as keyof typeof privacy],
+      });
     }
   };
 
+  // ============================================================
+  // Save account → PATCH /api/auth/me/
+  // ============================================================
+  const handleSaveAccount = async () => {
+    setIsSavingAccount(true);
+    try {
+      const res = await authApi.updateProfile({
+        fullName: account.fullName.trim(),
+        mobileNumber: account.mobile.trim(),
+        countryCode: account.countryCode,
+        region: account.region.trim(),
+        currentCity: account.city.trim(),
+        educationalBackground: account.education.trim(),
+      });
+
+      if (res.success) {
+        await refreshUser();
+        flashSaved('Profile updated');
+      } else {
+        flashError(res.message || 'Could not update profile.');
+      }
+    } catch (err) {
+      console.error('Save account error:', err);
+      flashError('Could not reach the server.');
+    } finally {
+      setIsSavingAccount(false);
+    }
+  };
+
+  // ============================================================
+  // Change password → POST /api/auth/change-password/
+  // ============================================================
+  const handleChangePassword = async () => {
+    if (!security.currentPassword || !security.newPassword) {
+      flashError('All password fields are required.');
+      return;
+    }
+    if (security.newPassword.length < 6) {
+      flashError('New password must be at least 6 characters.');
+      return;
+    }
+    if (security.newPassword !== security.confirmPassword) {
+      flashError('Passwords do not match.');
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      const res = await authApi.changePassword({
+        currentPassword: security.currentPassword,
+        newPassword: security.newPassword,
+        confirmPassword: security.confirmPassword,
+      });
+
+      if (res.success) {
+        setSecurity({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+          twoFactor: security.twoFactor,
+        });
+        flashSaved('Password updated');
+      } else {
+        flashError(res.message || 'Could not update password.');
+      }
+    } catch (err) {
+      console.error('Change password error:', err);
+      flashError('Could not reach the server.');
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
+  // ============================================================
+  // Tabs
+  // ============================================================
   const tabs: { key: SettingsTab; label: string; icon: React.ReactNode }[] = [
     {
       key: 'account',
@@ -137,17 +261,18 @@ const Settings: React.FC = () => {
     },
   ];
 
+  // ============================================================
+  // Render
+  // ============================================================
   return (
     <div className="space-y-6">
-      {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Settings</h1>
         <p className="text-gray-600">Manage your account preferences and privacy</p>
       </div>
 
-      {/* Success toast */}
       {savedMessage && (
-        <div className="fixed top-20 right-6 z-50 bg-green-600 text-white px-5 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in">
+        <div className="fixed top-20 right-6 z-50 bg-green-600 text-white px-5 py-3 rounded-lg shadow-lg flex items-center gap-2">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
@@ -155,8 +280,17 @@ const Settings: React.FC = () => {
         </div>
       )}
 
+      {errorMessage && (
+        <div className="fixed top-20 right-6 z-50 bg-red-600 text-white px-5 py-3 rounded-lg shadow-lg flex items-center gap-2">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
+          </svg>
+          {errorMessage}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar tabs */}
         <aside className="lg:col-span-1">
           <Card className="p-2 lg:sticky lg:top-24">
             <nav className="space-y-1">
@@ -183,7 +317,6 @@ const Settings: React.FC = () => {
           </Card>
         </aside>
 
-        {/* Content area */}
         <div className="lg:col-span-3 space-y-6">
           {/* ---------- ACCOUNT ---------- */}
           {activeTab === 'account' && (
@@ -209,6 +342,7 @@ const Settings: React.FC = () => {
                     type="email"
                     value={account.email}
                     onChange={handleAccountChange}
+                    disabled
                   />
                   <Input
                     label="Mobile Number"
@@ -236,23 +370,28 @@ const Settings: React.FC = () => {
                   />
                 </div>
 
-                <div className="mt-4">
-                  <label className="block text-sm font-medium mb-1">Bio</label>
-                  <textarea
-                    name="bio"
-                    value={account.bio}
-                    onChange={handleAccountChange}
-                    rows={3}
-                    placeholder="Tell us a bit about yourself..."
-                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
-                  />
-                </div>
-
                 <div className="mt-6 flex gap-3">
-                  <Button onClick={() => flashSaved('Profile updated')}>
-                    Save Changes
+                  <Button onClick={handleSaveAccount} disabled={isSavingAccount}>
+                    {isSavingAccount ? 'Saving...' : 'Save Changes'}
                   </Button>
-                  <Button variant="secondary">Cancel</Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      if (!user) return;
+                      setAccount({
+                        fullName: user.fullName ?? '',
+                        email: user.email ?? '',
+                        mobile: user.mobileNumber ?? '',
+                        countryCode: user.countryCode ?? '+255',
+                        region: user.region ?? '',
+                        city: user.currentCity ?? '',
+                        education: user.educationalBackground ?? '',
+                      });
+                    }}
+                    disabled={isSavingAccount}
+                  >
+                    Cancel
+                  </Button>
                 </div>
               </Card>
 
@@ -263,7 +402,9 @@ const Settings: React.FC = () => {
                 <p className="text-sm text-gray-500 mb-4">
                   Once you delete your account, all your data will be permanently removed.
                 </p>
-                <Button variant="danger">Delete Account</Button>
+                <Button variant="danger" disabled>
+                  Delete Account
+                </Button>
               </Card>
             </>
           )}
@@ -307,8 +448,8 @@ const Settings: React.FC = () => {
                 </div>
 
                 <div className="mt-6">
-                  <Button onClick={() => flashSaved('Password updated')}>
-                    Update Password
+                  <Button onClick={handleChangePassword} disabled={isSavingPassword}>
+                    {isSavingPassword ? 'Updating...' : 'Update Password'}
                   </Button>
                 </div>
               </Card>
@@ -333,38 +474,6 @@ const Settings: React.FC = () => {
                     />
                     <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-black transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
                   </label>
-                </div>
-              </Card>
-
-              <Card className="p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-1">Active Sessions</h2>
-                <p className="text-sm text-gray-500 mb-4">
-                  Devices currently logged into your account
-                </p>
-                <div className="space-y-3">
-                  {[
-                    { device: 'Chrome on Windows', location: 'Dar es Salaam, TZ', current: true },
-                    { device: 'Safari on iPhone', location: 'Dar es Salaam, TZ', current: false },
-                  ].map((s, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{s.device}</p>
-                        <p className="text-xs text-gray-500">{s.location}</p>
-                      </div>
-                      {s.current ? (
-                        <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded">
-                          Current
-                        </span>
-                      ) : (
-                        <button className="text-xs text-red-600 hover:underline">
-                          Revoke
-                        </button>
-                      )}
-                    </div>
-                  ))}
                 </div>
               </Card>
             </>
