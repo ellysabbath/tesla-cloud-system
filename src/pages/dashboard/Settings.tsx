@@ -2,7 +2,11 @@ import React, { useEffect, useState } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { authApi } from '../../api/api';
+import { authApi, notificationApi } from '../../api/api';
+import type {
+  ApiNotificationPrefs,
+  ApiPrivacySettings,
+} from '../../api/api';
 import { useAuth } from '../../context/AuthContext';
 
 type SettingsTab =
@@ -51,6 +55,8 @@ const Settings: React.FC = () => {
     smsAlerts: false,
     pushUpdates: true,
   });
+  const [isLoadingPrefs, setIsLoadingPrefs] = useState(false);
+  const [isSavingPrefs, setIsSavingPrefs] = useState(false);
 
   // ---------- Appearance ----------
   const [appearance, setAppearance] = useState({
@@ -66,6 +72,8 @@ const Settings: React.FC = () => {
     showCertificates: true,
     allowMessages: true,
   });
+  const [isLoadingPrivacy, setIsLoadingPrivacy] = useState(false);
+  const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
 
   // ============================================================
   // Prefill account from AuthContext
@@ -82,6 +90,62 @@ const Settings: React.FC = () => {
       education: user.educationalBackground ?? '',
     });
   }, [user]);
+
+  // ============================================================
+  // Load notification prefs + privacy settings once
+  // ============================================================
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPrefs = async () => {
+      setIsLoadingPrefs(true);
+      try {
+        const res = await notificationApi.getPrefs();
+        if (!cancelled && res.success && res.data) {
+          const d = res.data as ApiNotificationPrefs;
+          setNotifications({
+            emailNews: d.email_news,
+            emailCourses: d.email_courses,
+            emailExams: d.email_exams,
+            emailCertificates: d.email_certificates,
+            smsAlerts: d.sms_alerts,
+            pushUpdates: d.push_updates,
+          });
+        }
+      } catch (err) {
+        console.error('Load prefs error:', err);
+      } finally {
+        if (!cancelled) setIsLoadingPrefs(false);
+      }
+    };
+
+    const loadPrivacy = async () => {
+      setIsLoadingPrivacy(true);
+      try {
+        const res = await notificationApi.getPrivacy();
+        if (!cancelled && res.success && res.data) {
+          const d = res.data as ApiPrivacySettings;
+          setPrivacy({
+            showProfile: d.show_profile,
+            showProgress: d.show_progress,
+            showCertificates: d.show_certificates,
+            allowMessages: d.allow_messages,
+          });
+        }
+      } catch (err) {
+        console.error('Load privacy error:', err);
+      } finally {
+        if (!cancelled) setIsLoadingPrivacy(false);
+      }
+    };
+
+    loadPrefs();
+    loadPrivacy();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ============================================================
   // Flash helpers
@@ -202,6 +266,52 @@ const Settings: React.FC = () => {
       flashError('Could not reach the server.');
     } finally {
       setIsSavingPassword(false);
+    }
+  };
+
+  // ============================================================
+  // Save notification prefs → PATCH /api/notifications/prefs/
+  // ============================================================
+  const handleSaveNotificationPrefs = async () => {
+    setIsSavingPrefs(true);
+    try {
+      const res = await notificationApi.updatePrefs({
+        email_news: notifications.emailNews,
+        email_courses: notifications.emailCourses,
+        email_exams: notifications.emailExams,
+        email_certificates: notifications.emailCertificates,
+        sms_alerts: notifications.smsAlerts,
+        push_updates: notifications.pushUpdates,
+      });
+      if (res.success) flashSaved('Notification preferences saved');
+      else flashError(res.message || 'Could not save preferences.');
+    } catch (err) {
+      console.error('Save prefs error:', err);
+      flashError('Could not reach the server.');
+    } finally {
+      setIsSavingPrefs(false);
+    }
+  };
+
+  // ============================================================
+  // Save privacy → PATCH /api/notifications/privacy/
+  // ============================================================
+  const handleSavePrivacy = async () => {
+    setIsSavingPrivacy(true);
+    try {
+      const res = await notificationApi.updatePrivacy({
+        show_profile: privacy.showProfile,
+        show_progress: privacy.showProgress,
+        show_certificates: privacy.showCertificates,
+        allow_messages: privacy.allowMessages,
+      });
+      if (res.success) flashSaved('Privacy settings saved');
+      else flashError(res.message || 'Could not save privacy settings.');
+    } catch (err) {
+      console.error('Save privacy error:', err);
+      flashError('Could not reach the server.');
+    } finally {
+      setIsSavingPrivacy(false);
     }
   };
 
@@ -489,39 +599,48 @@ const Settings: React.FC = () => {
                 </p>
               </div>
 
-              <div className="space-y-1">
-                {[
-                  { key: 'emailNews', label: 'News & Updates', desc: 'Receive news about Tesla Cloud Institute' },
-                  { key: 'emailCourses', label: 'Course Updates', desc: 'New lessons, materials and assignments' },
-                  { key: 'emailExams', label: 'Exam Results', desc: 'Get notified when your exam is marked' },
-                  { key: 'emailCertificates', label: 'Certificates', desc: 'When you earn a new certificate' },
-                  { key: 'smsAlerts', label: 'SMS Alerts', desc: 'Important alerts via SMS' },
-                  { key: 'pushUpdates', label: 'Push Notifications', desc: 'Browser push notifications' },
-                ].map((item) => (
-                  <div
-                    key={item.key}
-                    className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
-                  >
-                    <div className="pr-4">
-                      <p className="text-sm font-medium text-gray-900">{item.label}</p>
-                      <p className="text-xs text-gray-500">{item.desc}</p>
+              {isLoadingPrefs ? (
+                <div className="py-8 text-center text-gray-400 text-sm">
+                  Loading preferences...
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {[
+                    { key: 'emailNews', label: 'News & Updates', desc: 'Receive news about Tesla Cloud Institute' },
+                    { key: 'emailCourses', label: 'Course Updates', desc: 'New lessons, materials and assignments' },
+                    { key: 'emailExams', label: 'Exam Results', desc: 'Get notified when your exam is marked' },
+                    { key: 'emailCertificates', label: 'Certificates', desc: 'When you earn a new certificate' },
+                    { key: 'smsAlerts', label: 'SMS Alerts', desc: 'Important alerts via SMS' },
+                    { key: 'pushUpdates', label: 'Push Notifications', desc: 'Browser push notifications' },
+                  ].map((item) => (
+                    <div
+                      key={item.key}
+                      className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                    >
+                      <div className="pr-4">
+                        <p className="text-sm font-medium text-gray-900">{item.label}</p>
+                        <p className="text-xs text-gray-500">{item.desc}</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={notifications[item.key as keyof typeof notifications]}
+                          onChange={() => handleToggle('notifications', item.key)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-black transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
+                      </label>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={notifications[item.key as keyof typeof notifications]}
-                        onChange={() => handleToggle('notifications', item.key)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-black transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
-                    </label>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
 
               <div className="mt-6">
-                <Button onClick={() => flashSaved('Notification preferences saved')}>
-                  Save Preferences
+                <Button
+                  onClick={handleSaveNotificationPrefs}
+                  disabled={isSavingPrefs || isLoadingPrefs}
+                >
+                  {isSavingPrefs ? 'Saving...' : 'Save Preferences'}
                 </Button>
               </div>
             </Card>
@@ -634,37 +753,46 @@ const Settings: React.FC = () => {
                 </p>
               </div>
 
-              <div className="space-y-1">
-                {[
-                  { key: 'showProfile', label: 'Public Profile', desc: 'Allow other students to view your profile' },
-                  { key: 'showProgress', label: 'Show Progress', desc: 'Display your course progress publicly' },
-                  { key: 'showCertificates', label: 'Show Certificates', desc: 'Display earned certificates on your profile' },
-                  { key: 'allowMessages', label: 'Allow Messages', desc: 'Let other students send you messages' },
-                ].map((item) => (
-                  <div
-                    key={item.key}
-                    className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
-                  >
-                    <div className="pr-4">
-                      <p className="text-sm font-medium text-gray-900">{item.label}</p>
-                      <p className="text-xs text-gray-500">{item.desc}</p>
+              {isLoadingPrivacy ? (
+                <div className="py-8 text-center text-gray-400 text-sm">
+                  Loading privacy settings...
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {[
+                    { key: 'showProfile', label: 'Public Profile', desc: 'Allow other students to view your profile' },
+                    { key: 'showProgress', label: 'Show Progress', desc: 'Display your course progress publicly' },
+                    { key: 'showCertificates', label: 'Show Certificates', desc: 'Display earned certificates on your profile' },
+                    { key: 'allowMessages', label: 'Allow Messages', desc: 'Let other students send you messages' },
+                  ].map((item) => (
+                    <div
+                      key={item.key}
+                      className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                    >
+                      <div className="pr-4">
+                        <p className="text-sm font-medium text-gray-900">{item.label}</p>
+                        <p className="text-xs text-gray-500">{item.desc}</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={privacy[item.key as keyof typeof privacy]}
+                          onChange={() => handleToggle('privacy', item.key)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-black transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
+                      </label>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={privacy[item.key as keyof typeof privacy]}
-                        onChange={() => handleToggle('privacy', item.key)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-black transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
-                    </label>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
 
               <div className="mt-6">
-                <Button onClick={() => flashSaved('Privacy settings saved')}>
-                  Save Settings
+                <Button
+                  onClick={handleSavePrivacy}
+                  disabled={isSavingPrivacy || isLoadingPrivacy}
+                >
+                  {isSavingPrivacy ? 'Saving...' : 'Save Settings'}
                 </Button>
               </div>
             </Card>

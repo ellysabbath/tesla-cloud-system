@@ -1149,6 +1149,147 @@ export const certificateApi = {
     ),
 };
 
+
+// ============================================================
+// Notifications API — types
+// ============================================================
+export interface ApiNotification {
+  id: string;
+  title: string;
+  body: string | null;
+  type: string;                // exam_result | payment | certificate | system
+  is_read: boolean;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface ApiNotificationList {
+  items: ApiNotification[];
+  unreadCount: number;
+}
+
+export interface ApiNotificationPrefs {
+  email_news: boolean;
+  email_courses: boolean;
+  email_exams: boolean;
+  email_certificates: boolean;
+  sms_alerts: boolean;
+  push_updates: boolean;
+  updated_at: string;
+}
+
+export interface ApiPrivacySettings {
+  show_profile: boolean;
+  show_progress: boolean;
+  show_certificates: boolean;
+  allow_messages: boolean;
+  updated_at: string;
+}
+
+// ============================================================
+// Notifications API — client
+// ============================================================
+export const notificationApi = {
+  /** List my notifications. Pass `{ unread: true }` to filter unread. */
+  list: async (params?: {
+    unread?: boolean;
+    limit?: number;
+  }): Promise<ApiResponse<ApiNotification[]> & { unreadCount?: number }> => {
+    const qs = new URLSearchParams();
+    if (params?.unread) qs.set('unread', 'true');
+    if (params?.limit) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+
+    const res = await request<ApiNotification[]>(
+      `/notifications/${suffix}`,
+      { method: 'GET' },
+      true
+    );
+
+    // Backend also returns `unreadCount` at the top level — keep it.
+    return {
+      ...res,
+      unreadCount:
+        typeof (res as Record<string, unknown>).unreadCount === 'number'
+          ? ((res as Record<string, unknown>).unreadCount as number)
+          : undefined,
+    };
+  },
+
+  /** Mark a single notification as read. */
+  markRead: async (
+    notificationId: string
+  ): Promise<ApiResponse<ApiNotification>> =>
+    request<ApiNotification>(
+      `/notifications/${notificationId}/read/`,
+      { method: 'POST' },
+      true
+    ),
+
+  /** Mark all my notifications as read. */
+  markAllRead: async (): Promise<ApiResponse<{ updated: number }>> =>
+    request<{ updated: number }>(
+      `/notifications/read-all/`,
+      { method: 'POST' },
+      true
+    ),
+
+  /** Delete a single notification. */
+  remove: async (notificationId: string): Promise<ApiResponse> =>
+    request(
+      `/notifications/${notificationId}/delete/`,
+      { method: 'POST' },
+      true
+    ),
+
+  /** Delete all my notifications. */
+  clear: async (): Promise<ApiResponse<{ deleted: number }>> =>
+    request<{ deleted: number }>(
+      `/notifications/clear/`,
+      { method: 'POST' },
+      true
+    ),
+
+  // ---------- Preferences ----------
+  getPrefs: async (): Promise<ApiResponse<ApiNotificationPrefs>> =>
+    request<ApiNotificationPrefs>('/notifications/prefs/'),
+
+  updatePrefs: async (
+    payload: Partial<Omit<ApiNotificationPrefs, 'updated_at'>>
+  ): Promise<ApiResponse<ApiNotificationPrefs>> =>
+    request<ApiNotificationPrefs>(
+      '/notifications/prefs/',
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      true
+    ),
+
+  // ---------- Privacy ----------
+  getPrivacy: async (): Promise<ApiResponse<ApiPrivacySettings>> =>
+    request<ApiPrivacySettings>('/notifications/privacy/'),
+
+  updatePrivacy: async (
+    payload: Partial<Omit<ApiPrivacySettings, 'updated_at'>>
+  ): Promise<ApiResponse<ApiPrivacySettings>> =>
+    request<ApiPrivacySettings>(
+      '/notifications/privacy/',
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      true
+    ),
+
+  // ---------- Admin ----------
+  adminBroadcast: async (payload: {
+    title: string;
+    body?: string;
+    type?: string;
+    userId?: string;
+  }): Promise<ApiResponse<{ created: number }>> =>
+    request<{ created: number }>(
+      '/notifications/admin/broadcast/',
+      { method: 'POST', body: JSON.stringify(payload) },
+      true
+    ),
+};
+
 // ============================================================
 // Registration video (logged-in user)
 // ============================================================
@@ -1174,6 +1315,7 @@ export default {
   getAccessToken,
   getRefreshToken,
   clearTokens,
+  notificationApi,   
   isAuthenticated,
   getMyRegistrationVideo,
   fileToBase64,

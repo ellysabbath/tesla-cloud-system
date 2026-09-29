@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { authApi } from '../../api/api';
+import { authApi, notificationApi } from '../../api/api';
+import type { ApiNotification } from '../../api/api';
 
 // ============================================================
 // Types
@@ -18,11 +19,10 @@ interface AdminTopBarProps {
   isSidebarOpen: boolean;
 }
 
+const POLL_MS = 60_000; // refresh unread count every 60s
+
 // ============================================================
 // Fallback — read what we already stored at login.
-// `localStorage.user` is expected to be a JSON string like:
-//   { "id": "...", "fullName": "Elisha", "email": "...",
-//     "role": "admin", "profilePicture": null }
 // ============================================================
 const readStoredUser = (): CurrentUser | null => {
   try {
@@ -33,10 +33,7 @@ const readStoredUser = (): CurrentUser | null => {
     return {
       id: String(parsed.id ?? ''),
       fullName:
-        parsed.fullName ||
-        parsed.name ||
-        parsed.username ||
-        'User',
+        parsed.fullName || parsed.name || parsed.username || 'User',
       email: parsed.email || '',
       role: parsed.role || 'user',
       profilePicture: parsed.profilePicture ?? null,
@@ -44,6 +41,29 @@ const readStoredUser = (): CurrentUser | null => {
   } catch {
     return null;
   }
+};
+
+// ============================================================
+// Helpers
+// ============================================================
+const timeAgo = (iso: string): string => {
+  const d = new Date(iso).getTime();
+  const diff = Math.max(0, Date.now() - d);
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
+const typeColor: Record<string, string> = {
+  exam_result: 'bg-blue-100 text-blue-700',
+  payment: 'bg-purple-100 text-purple-700',
+  certificate: 'bg-green-100 text-green-700',
+  system: 'bg-gray-100 text-gray-700',
 };
 
 // ============================================================
@@ -55,15 +75,24 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
 }) => {
   const navigate = useNavigate();
 
+  // Dropdowns
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // Seed from localStorage so the header renders instantly.
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const notifRef = useRef<HTMLDivElement | null>(null);
+
+  // User
   const [user, setUser] = useState<CurrentUser | null>(() => readStoredUser());
   const [isLoading, setIsLoading] = useState(false);
 
+  // Notifications
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isLoadingNotifs, setIsLoadingNotifs] = useState(false);
+
   // ============================================================
-  // Fetch the current user
+  // Fetch current user
   // ============================================================
   const fetchCurrentUser = useCallback(async () => {
     setIsLoading(true);
@@ -72,7 +101,6 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
       if (res.success && res.data) {
         const u = res.data as CurrentUser;
         setUser(u);
-        // Keep localStorage in sync so the next page load is instant.
         try {
           localStorage.setItem('user', JSON.stringify(u));
         } catch {
@@ -80,9 +108,6 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
         }
       }
     } catch (err) {
-      // Network error or 401 — leave the cached user in place.
-      // If the API returned 401, the http layer probably already
-      // redirected to /signin; no need to duplicate that here.
       console.error('Failed to load current user:', err);
     } finally {
       setIsLoading(false);
@@ -93,7 +118,6 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
     fetchCurrentUser();
   }, [fetchCurrentUser]);
 
-  // Refresh when the tab regains focus (e.g. profile updated elsewhere).
   useEffect(() => {
     const onFocus = () => fetchCurrentUser();
     window.addEventListener('focus', onFocus);
@@ -101,48 +125,130 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
   }, [fetchCurrentUser]);
 
   // ============================================================
+  // Load notifications
+  // ============================================================
+  const loadNotifications = useCallback(async () => {
+    setIsLoadingNotifs(true);
+    try {
+      const res = await notificationApi.list({ limit: 20 });
+      if (res.success && Array.isArray(res.data)) {
+        setNotifications(res.data as ApiNotification[]);
+      }
+      if (typeof res.unreadCount === 'number') {
+        setUnreadCount(res.unreadCount);
+      }
+    } catch (err) {
+      console.error('Load notifications error:', err);
+    } finally {
+      setIsLoadingNotifs(false);
+    }
+  }, []);
+
+  const refreshUnreadCount = useCallback(async () => {
+    try {
+      const res = await notificationApi.list({ unread: true, limit: 1 });
+      if (typeof res.unreadCount === 'number') {
+        setUnreadCount(res.unreadCount);
+      }
+    } catch {
+      /* silent */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNotifications();
+    const id = setInterval(refreshUnreadCount, POLL_MS);
+    return () => clearInterval(id);
+  }, [loadNotifications, refreshUnreadCount]);
+
+  // ============================================================
   // Click-outside to close dropdowns
   // ============================================================
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.admin-dropdown')) {
+      const target = e.target as Node;
+      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
         setShowDropdown(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(target)) {
         setShowNotifications(false);
       }
     };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // ============================================================
-  // Notifications — placeholder data for now
+  // Notification handlers
   // ============================================================
-  const notifications = [
-    { id: 1, text: 'New student registered: John M.', time: '5 min ago' },
-    { id: 2, text: 'Exam submitted for marking', time: '20 min ago' },
-    { id: 3, text: 'Payment received: TZS 120,000', time: '1 hour ago' },
-    { id: 4, text: 'New testimonial pending approval', time: '3 hours ago' },
-  ];
+  const handleOpenNotifications = () => {
+    const next = !showNotifications;
+    setShowNotifications(next);
+    setShowDropdown(false);
+    if (next) loadNotifications();
+  };
+
+  const handleMarkRead = async (n: ApiNotification) => {
+    if (n.is_read) return;
+    setNotifications((prev) =>
+      prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x))
+    );
+    setUnreadCount((c) => Math.max(0, c - 1));
+    try {
+      await notificationApi.markRead(n.id);
+    } catch {
+      setNotifications((prev) =>
+        prev.map((x) => (x.id === n.id ? { ...x, is_read: false } : x))
+      );
+      setUnreadCount((c) => c + 1);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    const prev = notifications;
+    const prevUnread = unreadCount;
+    setNotifications((list) => list.map((x) => ({ ...x, is_read: true })));
+    setUnreadCount(0);
+    try {
+      await notificationApi.markAllRead();
+    } catch {
+      setNotifications(prev);
+      setUnreadCount(prevUnread);
+    }
+  };
+
+  const handleClearAll = async () => {
+    const prev = notifications;
+    const prevUnread = unreadCount;
+    setNotifications([]);
+    setUnreadCount(0);
+    try {
+      await notificationApi.clear();
+    } catch {
+      setNotifications(prev);
+      setUnreadCount(prevUnread);
+    }
+  };
 
   // ============================================================
   // Logout
   // ============================================================
   const handleLogout = async () => {
     try {
-      // Best-effort: tell the server to invalidate the session/token.
-      // If your authApi has no `logout`, drop this try/catch.
-      if ('logout' in authApi && typeof (authApi as any).logout === 'function') {
-        await (authApi as any).logout();
+      if (
+        'logout' in authApi &&
+        typeof (authApi as unknown as { logout: () => Promise<unknown> })
+          .logout === 'function'
+      ) {
+        await (
+          authApi as unknown as { logout: () => Promise<unknown> }
+        ).logout();
       }
     } catch (err) {
       console.warn('Logout API call failed, clearing local state anyway:', err);
     } finally {
       localStorage.removeItem('user');
       localStorage.removeItem('keepMeLoggedIn');
-      // Remove any token keys you use — add them here as needed.
-      // localStorage.removeItem('accessToken');
-      // localStorage.removeItem('refreshToken');
       navigate('/signin');
     }
   };
@@ -168,32 +274,12 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
             aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
           >
             {isSidebarOpen ? (
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             ) : (
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6h16M4 12h16M4 18h16"
-                />
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             )}
           </button>
@@ -205,56 +291,137 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
 
         {/* Right: notifications + profile */}
         <div className="flex items-center gap-2">
-          {/* Notifications */}
-          <div className="relative admin-dropdown">
+          {/* ---------- Notifications ---------- */}
+          <div className="relative" ref={notifRef}>
             <button
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={handleOpenNotifications}
               className="p-2 rounded-lg hover:bg-gray-100 transition-colors relative"
               aria-label="Notifications"
+              aria-haspopup="true"
+              aria-expanded={showNotifications}
             >
-              <svg
-                className="w-5 h-5 text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                />
+              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg py-1 overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100">
-                  <p className="text-sm font-semibold text-gray-800">
-                    Notifications
-                  </p>
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                    {unreadCount > 0 && (
+                      <p className="text-xs text-gray-500">{unreadCount} unread</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={handleMarkAllRead}
+                        className="text-xs text-black hover:underline"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                    {notifications.length > 0 && (
+                      <button
+                        onClick={handleClearAll}
+                        className="text-xs text-red-600 hover:underline"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {/* List */}
                 <div className="max-h-80 overflow-y-auto">
-                  {notifications.map((n) => (
-                    <div
-                      key={n.id}
-                      className="px-4 py-3 hover:bg-gray-50 border-b border-gray-50 last:border-0"
-                    >
-                      <p className="text-sm text-gray-800">{n.text}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{n.time}</p>
+                  {isLoadingNotifs ? (
+                    <div className="px-4 py-8 text-center text-gray-400 text-sm">
+                      Loading...
                     </div>
-                  ))}
+                  ) : notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                      You have no notifications.
+                    </div>
+                  ) : (
+                    notifications.map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={() => handleMarkRead(n)}
+                        className={`w-full text-left px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors ${
+                          !n.is_read ? 'bg-blue-50/40' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span
+                            className={`shrink-0 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                              typeColor[n.type] || 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {n.type.replace('_', ' ')}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <p
+                                className={`text-sm truncate ${
+                                  !n.is_read
+                                    ? 'font-semibold text-gray-900'
+                                    : 'text-gray-700'
+                                }`}
+                              >
+                                {n.title}
+                              </p>
+                              {!n.is_read && (
+                                <span className="shrink-0 w-2 h-2 bg-blue-600 rounded-full" />
+                              )}
+                            </div>
+                            {n.body && (
+                              <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                                {n.body}
+                              </p>
+                            )}
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              {timeAgo(n.created_at)}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
+                  <Link
+                    to="/admin/notifications"
+                    onClick={() => setShowNotifications(false)}
+                    className="block text-center text-xs font-medium text-gray-700 hover:text-black"
+                  >
+                    View all notifications
+                  </Link>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Profile */}
-          <div className="relative admin-dropdown">
+          {/* ---------- Profile ---------- */}
+          <div className="relative" ref={dropdownRef}>
             <button
-              onClick={() => setShowDropdown(!showDropdown)}
+              onClick={() => {
+                setShowDropdown(!showDropdown);
+                setShowNotifications(false);
+              }}
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+              aria-haspopup="true"
+              aria-expanded={showDropdown}
             >
               {user?.profilePicture ? (
                 <img
@@ -271,17 +438,14 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
                 {isLoading && !user ? '…' : firstName}
               </span>
               <svg
-                className="w-4 h-4 text-gray-500"
+                className={`w-4 h-4 text-gray-500 transition-transform ${
+                  showDropdown ? 'rotate-180' : ''
+                }`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
 
