@@ -1,16 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import {
   authApi,
+  fileToBase64,
   getAccessToken,
   getMyRegistrationVideo,
   type RegistrationVideo,
 } from '../../api/api';
 
 // ============================================================
-// Types — shape returned by /api/auth/me/
+// Types
 // ============================================================
 interface ApiUser {
   id: string;
@@ -36,6 +37,12 @@ const MyProfile: React.FC = () => {
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [error, setError] = useState('');
+
+  // ---------- Profile picture state (new) ----------
+  const [isSavingPicture, setIsSavingPicture] = useState(false);
+  const [pictureError, setPictureError] = useState('');
+  const [pictureSuccess, setPictureSuccess] = useState('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ============================================================
   // 1. Load the user
@@ -76,7 +83,7 @@ const MyProfile: React.FC = () => {
   }, []);
 
   // ============================================================
-  // 2. Load the registration video (separately — it's big)
+  // 2. Load the registration video
   // ============================================================
   useEffect(() => {
     if (!user) return;
@@ -99,6 +106,99 @@ const MyProfile: React.FC = () => {
       cancelled = true;
     };
   }, [user]);
+
+  // ============================================================
+  // 3. Profile picture — picker + upload (new)
+  // ============================================================
+  const openFilePicker = () => {
+    setPictureError('');
+    setPictureSuccess('');
+    fileInputRef.current?.click();
+  };
+
+  const handleFilePicked = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    // Reset the input so picking the same file twice still fires.
+    e.target.value = '';
+    if (!file) return;
+
+    // Basic client-side validation.
+    if (!file.type.startsWith('image/')) {
+      setPictureError('Please choose an image file.');
+      return;
+    }
+    const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+    if (file.size > MAX_BYTES) {
+      setPictureError('Image is too large. Please choose a file under 2 MB.');
+      return;
+    }
+
+    setIsSavingPicture(true);
+    setPictureError('');
+    setPictureSuccess('');
+
+    try {
+      const base64 = await fileToBase64(file);
+      const res = await authApi.updateProfile({
+        profilePicture: base64,
+      });
+
+      if (res.success) {
+        // Optimistically update the displayed image without refetching.
+        setUser((prev) =>
+          prev ? { ...prev, profilePicture: base64 } : prev
+        );
+        setPictureSuccess('Profile picture updated.');
+        setTimeout(() => setPictureSuccess(''), 2500);
+      } else {
+        setPictureError(
+          res.message || 'Could not update the profile picture.'
+        );
+      }
+    } catch (err) {
+      console.error('Profile picture update error:', err);
+      setPictureError('Could not reach the server.');
+    } finally {
+      setIsSavingPicture(false);
+    }
+  };
+
+  const handleRemovePicture = async () => {
+    if (!user?.profilePicture) return;
+    if (
+      !window.confirm(
+        'Remove your profile picture? You can always upload another one.'
+      )
+    ) {
+      return;
+    }
+
+    setIsSavingPicture(true);
+    setPictureError('');
+    setPictureSuccess('');
+
+    try {
+      const res = await authApi.updateProfile({ profilePicture: null });
+      if (res.success) {
+        setUser((prev) =>
+          prev ? { ...prev, profilePicture: null } : prev
+        );
+        setPictureSuccess('Profile picture removed.');
+        setTimeout(() => setPictureSuccess(''), 2500);
+      } else {
+        setPictureError(
+          res.message || 'Could not remove the profile picture.'
+        );
+      }
+    } catch (err) {
+      console.error('Profile picture remove error:', err);
+      setPictureError('Could not reach the server.');
+    } finally {
+      setIsSavingPicture(false);
+    }
+  };
 
   // ============================================================
   // Helpers
@@ -241,21 +341,82 @@ const MyProfile: React.FC = () => {
       </div>
 
       {/* ============================================================
-          Header card
+          Header card — with profile picture upload
       ============================================================ */}
       <Card className="p-6">
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-          {user.profilePicture ? (
-            <img
-              src={user.profilePicture}
-              alt={user.fullName}
-              className="w-24 h-24 rounded-full object-cover border border-gray-200"
+          {/* ---------- Avatar with edit button (new) ---------- */}
+          <div className="relative shrink-0 group">
+            {user.profilePicture ? (
+              <img
+                src={user.profilePicture}
+                alt={user.fullName}
+                className="w-24 h-24 rounded-full object-cover border border-gray-200"
+              />
+            ) : (
+              <div className="w-24 h-24 rounded-full bg-black text-white flex items-center justify-center text-3xl font-bold">
+                {initials(user.fullName)}
+              </div>
+            )}
+
+            {/* Camera overlay button */}
+            <button
+              type="button"
+              onClick={openFilePicker}
+              disabled={isSavingPicture}
+              title="Change profile picture"
+              className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-40"
+            >
+              <svg
+                className="w-7 h-7"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M3 9a2 2 0 012-2h1.5l1-2h9l1 2H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                />
+                <circle cx="12" cy="13" r="3.5" />
+              </svg>
+            </button>
+
+            {/* Saving indicator */}
+            {isSavingPicture && (
+              <div className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center">
+                <svg
+                  className="w-6 h-6 text-white animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                  />
+                </svg>
+              </div>
+            )}
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFilePicked}
             />
-          ) : (
-            <div className="w-24 h-24 rounded-full bg-black text-white flex items-center justify-center text-3xl font-bold">
-              {initials(user.fullName)}
-            </div>
-          )}
+          </div>
 
           <div className="flex-1 text-center sm:text-left min-w-0">
             <h2 className="text-xl font-bold text-gray-900 truncate">
@@ -291,6 +452,41 @@ const MyProfile: React.FC = () => {
                 {user.status}
               </span>
             </div>
+
+            {/* ---------- Picture action buttons + messages (new) ---------- */}
+            <div className="flex flex-wrap gap-2 mt-4 justify-center sm:justify-start">
+              <Button
+                variant="outline"
+                size="small"
+                onClick={openFilePicker}
+                disabled={isSavingPicture}
+              >
+                {isSavingPicture
+                  ? 'Saving...'
+                  : user.profilePicture
+                  ? 'Change picture'
+                  : 'Upload picture'}
+              </Button>
+              {user.profilePicture && (
+                <Button
+                  variant="secondary"
+                  size="small"
+                  onClick={handleRemovePicture}
+                  disabled={isSavingPicture}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+
+            {pictureError && (
+              <p className="text-xs text-red-600 mt-2">{pictureError}</p>
+            )}
+            {pictureSuccess && (
+              <p className="text-xs text-green-600 mt-2">
+                {pictureSuccess}
+              </p>
+            )}
           </div>
 
           <Link to="/settings">
@@ -300,7 +496,7 @@ const MyProfile: React.FC = () => {
       </Card>
 
       {/* ============================================================
-          Registration video — small card, autoplay, muted, loop
+          Registration video — unchanged
       ============================================================ */}
       {isLoadingVideo && (
         <Card className="p-5">
@@ -322,7 +518,6 @@ const MyProfile: React.FC = () => {
       {!isLoadingVideo && video?.data && (
         <Card className="p-5">
           <div className="flex flex-col md:flex-row gap-5 items-start">
-            {/* Small autoplay player */}
             <div className="w-full md:w-64 shrink-0">
               <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
                 <video
@@ -342,7 +537,6 @@ const MyProfile: React.FC = () => {
               </div>
             </div>
 
-            {/* Meta info */}
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-gray-900 mb-1">
                 Registration Recording
@@ -392,7 +586,7 @@ const MyProfile: React.FC = () => {
       )}
 
       {/* ============================================================
-          Personal Information
+          Personal Information — unchanged
       ============================================================ */}
       <Card className="p-6">
         <h3 className="font-semibold text-gray-900 mb-4">

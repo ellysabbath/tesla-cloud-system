@@ -13,13 +13,13 @@
 // ============================================================
 const API_BASE: string =
   (import.meta.env.VITE_API_BASE as string | undefined) ??
-  "http://127.0.0.1:8000/api";
+  'http://127.0.0.1:8000/api';
 
 // ============================================================
 // Token persistence
 // ============================================================
-const ACCESS_KEY = "tesla_access";
-const REFRESH_KEY = "tesla_refresh";
+const ACCESS_KEY = 'tesla_access';
+const REFRESH_KEY = 'tesla_refresh';
 
 let accessToken: string | null = localStorage.getItem(ACCESS_KEY);
 let refreshToken: string | null = localStorage.getItem(REFRESH_KEY);
@@ -48,7 +48,7 @@ export const clearTokens = (): void => {
   refreshToken = null;
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
-  window.dispatchEvent(new Event("auth:logout"));
+  window.dispatchEvent(new Event('auth:logout'));
 };
 
 export const isAuthenticated = (): boolean => Boolean(accessToken);
@@ -63,8 +63,8 @@ async function refreshAccessToken(): Promise<boolean> {
   refreshInFlight = (async () => {
     try {
       const res = await fetch(`${API_BASE}/auth/token/refresh/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh: refreshToken }),
       });
       if (!res.ok) return false;
@@ -76,7 +76,7 @@ async function refreshAccessToken(): Promise<boolean> {
       setTokens(data.access, newRefresh);
       return true;
     } catch (err) {
-      console.error("[api] token refresh failed:", err);
+      console.error('[api] token refresh failed:', err);
       return false;
     } finally {
       refreshInFlight = null;
@@ -123,10 +123,10 @@ async function request<T = unknown>(
     };
 
     if (options.body && !(options.body instanceof FormData)) {
-      headers["Content-Type"] = "application/json";
+      headers['Content-Type'] = 'application/json';
     }
     if (withAuth && accessToken) {
-      headers["Authorization"] = `Bearer ${accessToken}`;
+      headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
     return fetch(`${API_BASE}${path}`, { ...options, headers });
@@ -136,7 +136,7 @@ async function request<T = unknown>(
   try {
     res = await buildFetch();
   } catch (err) {
-    console.error("[api] network error:", err);
+    console.error('[api] network error:', err);
     return {
       success: false,
       message: `Cannot reach the server at ${API_BASE}. Is Django running?`,
@@ -150,8 +150,8 @@ async function request<T = unknown>(
       try {
         res = await buildFetch();
       } catch (err) {
-        console.error("[api] network error after refresh:", err);
-        return { success: false, message: "Network error" };
+        console.error('[api] network error after refresh:', err);
+        return { success: false, message: 'Network error' };
       }
     } else {
       clearTokens();
@@ -233,7 +233,7 @@ export interface AdminUserRow {
   countryCode: string;
   region: string | null;
   currentCity: string | null;
-  status: "active" | "pending" | "suspended";
+  status: 'active' | 'pending' | 'suspended';
   isVerified: boolean;
   enrollments: number;
   joinedAt: string;
@@ -254,7 +254,7 @@ export interface AdminUserDetail {
   educationalBackground: string | null;
   bio: string | null;
   role: string;
-  status: "active" | "pending" | "suspended";
+  status: 'active' | 'pending' | 'suspended';
   isVerified: boolean;
   isActive: boolean;
   emailVerifiedAt: string | null;
@@ -285,7 +285,7 @@ export interface AdminUserUpdatePayload {
   educationalBackground?: string | null;
   gender?: string | null;
   role?: string;
-  status?: "active" | "pending" | "suspended";
+  status?: 'active' | 'pending' | 'suspended';
   isVerified?: boolean;
   isActive?: boolean;
   profilePicture?: string | null;
@@ -304,21 +304,21 @@ export const fileToBase64 = (file: File): Promise<string> =>
 
 export const getDeviceName = (): string => {
   const ua = navigator.userAgent;
-  if (/Windows/i.test(ua)) return "Windows";
-  if (/Macintosh/i.test(ua)) return "macOS";
-  if (/Android/i.test(ua)) return "Android";
-  if (/iPhone|iPad|iPod/i.test(ua)) return "iOS";
-  if (/Linux/i.test(ua)) return "Linux";
-  return "Unknown";
+  if (/Windows/i.test(ua)) return 'Windows';
+  if (/Macintosh/i.test(ua)) return 'macOS';
+  if (/Android/i.test(ua)) return 'Android';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS';
+  if (/Linux/i.test(ua)) return 'Linux';
+  return 'Unknown';
 };
 
 export const getIpAddress = async (): Promise<string> => {
   try {
-    const r = await fetch("https://api.ipify.org?format=json");
+    const r = await fetch('https://api.ipify.org?format=json');
     const j = await r.json();
-    return (j.ip as string) ?? "";
+    return (j.ip as string) ?? '';
   } catch {
-    return "";
+    return '';
   }
 };
 
@@ -336,7 +336,7 @@ export const authApi = {
       region: formData.region,
       currentCity: formData.currentCity,
       dateOfBirth: formData.dateOfBirth,
-      educationalBackground: formData.educationalBackground ?? "",
+      educationalBackground: formData.educationalBackground ?? '',
       password: formData.password,
       confirmPassword: formData.confirmPassword,
       termsAccepted: formData.termsAccepted,
@@ -352,31 +352,31 @@ export const authApi = {
     }
 
     return request(
-      "/auth/register/",
-      { method: "POST", body: JSON.stringify(payload) },
+      '/auth/register/',
+      { method: 'POST', body: JSON.stringify(payload) },
       false
     );
   },
 
   verifyAccount: async (token: string): Promise<ApiResponse> =>
     request(
-      "/auth/verify/",
-      { method: "POST", body: JSON.stringify({ token }) },
+      '/auth/verify/',
+      { method: 'POST', body: JSON.stringify({ token }) },
       false
     ),
 
   resendVerification: async (email: string): Promise<ApiResponse> =>
     request(
-      "/auth/resend-verification/",
-      { method: "POST", body: JSON.stringify({ email }) },
+      '/auth/resend-verification/',
+      { method: 'POST', body: JSON.stringify({ email }) },
       false
     ),
 
   // ---------- Auth ----------
   login: async (creds: LoginCredentials): Promise<ApiResponse> => {
     const res = await request(
-      "/auth/login/",
-      { method: "POST", body: JSON.stringify(creds) },
+      '/auth/login/',
+      { method: 'POST', body: JSON.stringify(creds) },
       false
     );
 
@@ -389,9 +389,9 @@ export const authApi = {
   logout: async (): Promise<ApiResponse> => {
     try {
       await request(
-        "/auth/logout/",
+        '/auth/logout/',
         {
-          method: "POST",
+          method: 'POST',
           body: JSON.stringify({ refresh: refreshToken }),
         },
         true
@@ -401,16 +401,18 @@ export const authApi = {
     }
 
     clearTokens();
-    return { success: true, message: "Logged out" };
+    return { success: true, message: 'Logged out' };
   },
 
   // ---------- Current user ----------
-  me: async (): Promise<ApiResponse> => request("/auth/me/"),
+  me: async (): Promise<ApiResponse> => request('/auth/me/'),
 
-  updateProfile: async (payload: ProfileUpdatePayload): Promise<ApiResponse> =>
+  updateProfile: async (
+    payload: ProfileUpdatePayload
+  ): Promise<ApiResponse> =>
     request(
-      "/auth/me/",
-      { method: "PATCH", body: JSON.stringify(payload) },
+      '/auth/me/',
+      { method: 'PATCH', body: JSON.stringify(payload) },
       true
     ),
 
@@ -418,8 +420,8 @@ export const authApi = {
     payload: ChangePasswordPayload
   ): Promise<ApiResponse> =>
     request(
-      "/auth/change-password/",
-      { method: "POST", body: JSON.stringify(payload) },
+      '/auth/change-password/',
+      { method: 'POST', body: JSON.stringify(payload) },
       true
     ),
 
@@ -428,8 +430,8 @@ export const authApi = {
     email: string;
   }): Promise<ApiResponse> =>
     request(
-      "/auth/password-reset/request/",
-      { method: "POST", body: JSON.stringify(payload) },
+      '/auth/password-reset/request/',
+      { method: 'POST', body: JSON.stringify(payload) },
       false
     ),
 
@@ -438,8 +440,8 @@ export const authApi = {
     code: string
   ): Promise<ApiResponse> =>
     request(
-      "/auth/password-reset/verify/",
-      { method: "POST", body: JSON.stringify({ email, code }) },
+      '/auth/password-reset/verify/',
+      { method: 'POST', body: JSON.stringify({ email, code }) },
       false
     ),
 
@@ -449,8 +451,8 @@ export const authApi = {
     confirmPassword: string;
   }): Promise<ApiResponse> => {
     const res = await request(
-      "/auth/password-reset/confirm/",
-      { method: "POST", body: JSON.stringify(payload) },
+      '/auth/password-reset/confirm/',
+      { method: 'POST', body: JSON.stringify(payload) },
       false
     );
 
@@ -468,13 +470,13 @@ export const authApi = {
     page_size?: number;
   }): Promise<ApiResponse<AdminUserRow[]>> => {
     const qs = new URLSearchParams();
-    if (params?.search) qs.set("search", params.search);
-    if (params?.status && params.status !== "all")
-      qs.set("status", params.status);
-    if (params?.page) qs.set("page", String(params.page));
-    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    if (params?.search) qs.set('search', params.search);
+    if (params?.status && params.status !== 'all')
+      qs.set('status', params.status);
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.page_size) qs.set('page_size', String(params.page_size));
 
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request<AdminUserRow[]>(`/auth/admin/users/${suffix}`);
   },
 
@@ -493,18 +495,18 @@ export const authApi = {
     payload: AdminUserUpdatePayload
   ): Promise<ApiResponse> =>
     request(`/auth/admin/users/${userId}/update/`, {
-      method: "POST",
+      method: 'POST',
       body: JSON.stringify(payload),
     }),
 
   adminDeleteUser: async (userId: string): Promise<ApiResponse> =>
-    request(`/auth/admin/users/${userId}/delete/`, { method: "POST" }),
+    request(`/auth/admin/users/${userId}/delete/`, { method: 'POST' }),
 
   adminSuspendUser: async (userId: string): Promise<ApiResponse> =>
-    request(`/auth/admin/users/${userId}/suspend/`, { method: "POST" }),
+    request(`/auth/admin/users/${userId}/suspend/`, { method: 'POST' }),
 
   adminActivateUser: async (userId: string): Promise<ApiResponse> =>
-    request(`/auth/admin/users/${userId}/activate/`, { method: "POST" }),
+    request(`/auth/admin/users/${userId}/activate/`, { method: 'POST' }),
 };
 
 // ============================================================
@@ -527,7 +529,7 @@ export interface CoursePayload {
   practicalExam?: string;
   image?: string;
   instructor?: string;
-  status?: "published" | "draft" | "archived";
+  status?: 'published' | 'draft' | 'archived';
 }
 
 export interface ApiCourse {
@@ -550,7 +552,7 @@ export interface ApiCourse {
   image: string | null;
   instructor: string | null;
   instructor_name: string | null;
-  status: "published" | "draft" | "archived";
+  status: 'published' | 'draft' | 'archived';
   created_at: string;
   updated_at: string;
 }
@@ -562,12 +564,12 @@ export const courseApi = {
     status?: string;
   }): Promise<ApiResponse<ApiCourse[]>> => {
     const qs = new URLSearchParams();
-    if (params?.search) qs.set("search", params.search);
-    if (params?.category && params.category !== "all")
-      qs.set("category", params.category);
-    if (params?.status && params.status !== "all")
-      qs.set("status", params.status);
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    if (params?.search) qs.set('search', params.search);
+    if (params?.category && params.category !== 'all')
+      qs.set('category', params.category);
+    if (params?.status && params.status !== 'all')
+      qs.set('status', params.status);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request<ApiCourse[]>(`/courses/${suffix}`);
   },
 
@@ -577,7 +579,7 @@ export const courseApi = {
   create: async (payload: CoursePayload): Promise<ApiResponse<ApiCourse>> =>
     request<ApiCourse>(
       `/courses/`,
-      { method: "POST", body: JSON.stringify(payload) },
+      { method: 'POST', body: JSON.stringify(payload) },
       true
     ),
 
@@ -587,12 +589,12 @@ export const courseApi = {
   ): Promise<ApiResponse<ApiCourse>> =>
     request<ApiCourse>(
       `/courses/${id}/`,
-      { method: "PATCH", body: JSON.stringify(payload) },
+      { method: 'PATCH', body: JSON.stringify(payload) },
       true
     ),
 
   remove: async (id: string): Promise<ApiResponse> =>
-    request(`/courses/${id}/delete/`, { method: "POST" }, true),
+    request(`/courses/${id}/delete/`, { method: 'POST' }, true),
 };
 
 // ============================================================
@@ -609,7 +611,7 @@ export interface ApiPayment {
   method: string;
   reference: string;
   phone_paid_from: string | null;
-  status: "paid" | "pending" | "failed" | "refunded";
+  status: 'paid' | 'pending' | 'failed' | 'refunded';
   paid_at: string | null;
   submittedAt: string;
 }
@@ -623,43 +625,43 @@ export interface PaymentSubmitPayload {
 
 export const paymentApi = {
   mine: async (): Promise<ApiResponse<ApiPayment[]>> =>
-    request<ApiPayment[]>("/payments/mine/"),
+    request<ApiPayment[]>('/payments/mine/'),
 
   adminList: async (): Promise<ApiResponse<ApiPayment[]>> =>
-    request<ApiPayment[]>("/payments/admin/"),
+    request<ApiPayment[]>('/payments/admin/'),
 
   submit: async (
     payload: PaymentSubmitPayload
   ): Promise<ApiResponse<ApiPayment>> =>
     request<ApiPayment>(
-      "/payments/submit/",
-      { method: "POST", body: JSON.stringify(payload) },
+      '/payments/submit/',
+      { method: 'POST', body: JSON.stringify(payload) },
       true
     ),
 
   markPaid: async (paymentId: string): Promise<ApiResponse<ApiPayment>> =>
     request<ApiPayment>(
       `/payments/${paymentId}/mark-paid/`,
-      { method: "POST" },
+      { method: 'POST' },
       true
     ),
 
   markFailed: async (paymentId: string): Promise<ApiResponse<ApiPayment>> =>
     request<ApiPayment>(
       `/payments/${paymentId}/fail/`,
-      { method: "POST" },
+      { method: 'POST' },
       true
     ),
 
   refund: async (paymentId: string): Promise<ApiResponse<ApiPayment>> =>
     request<ApiPayment>(
       `/payments/${paymentId}/refund/`,
-      { method: "POST" },
+      { method: 'POST' },
       true
     ),
 
   remove: async (paymentId: string): Promise<ApiResponse> =>
-    request(`/payments/${paymentId}/delete/`, { method: "POST" }, true),
+    request(`/payments/${paymentId}/delete/`, { method: 'POST' }, true),
 };
 
 // ============================================================
@@ -677,12 +679,12 @@ export interface ApiEnrollment {
   enrolled_at: string;
   completed_at: string | null;
   progress_pct: string;
-  status: "active" | "completed" | "dropped";
+  status: 'active' | 'completed' | 'dropped';
 }
 
 export const enrollmentApi = {
   mine: async (): Promise<ApiResponse<ApiEnrollment[]>> =>
-    request<ApiEnrollment[]>("/enrollments/mine/"),
+    request<ApiEnrollment[]>('/enrollments/mine/'),
 
   adminUserEnrollments: async (
     userId: string
@@ -692,12 +694,12 @@ export const enrollmentApi = {
   enroll: async (courseId: string): Promise<ApiResponse<ApiEnrollment>> =>
     request<ApiEnrollment>(
       `/enrollments/enroll/${courseId}/`,
-      { method: "POST" },
+      { method: 'POST' },
       true
     ),
 
   unenroll: async (courseId: string): Promise<ApiResponse> =>
-    request(`/enrollments/unenroll/${courseId}/`, { method: "POST" }, true),
+    request(`/enrollments/unenroll/${courseId}/`, { method: 'POST' }, true),
 };
 
 // ============================================================
@@ -730,7 +732,12 @@ export interface ApiExamQuestionFillBlank {
 
 export interface ApiExamQuestion {
   id: string;
-  type: 'multiple-choice' | 'true-false' | 'matching' | 'fill-blank' | string;
+  type:
+    | 'multiple-choice'
+    | 'true-false'
+    | 'matching'
+    | 'fill-blank'
+    | string;
   text: string;
   sort_order: number;
   options: ApiExamQuestionOption[];
@@ -782,7 +789,7 @@ export interface ExamPayload {
 }
 
 // ============================================================
-// Exam question — WRITE payload (matches QuestionWriteSerializer)
+// Exam question — WRITE payload
 // ============================================================
 export interface ExamQuestionPayload {
   type: string;
@@ -844,7 +851,6 @@ export const examApi = {
   close: async (id: string): Promise<ApiResponse<ApiExam>> =>
     request<ApiExam>(`/exams/${id}/close/`, { method: 'POST' }, true),
 
-  // ---------- Instructions ----------
   saveInstructions: async (
     id: string,
     instructions: string[]
@@ -855,7 +861,6 @@ export const examApi = {
       true
     ),
 
-  // ---------- Sections ----------
   saveSections: async (
     id: string,
     sections: ApiExamSection[]
@@ -866,7 +871,6 @@ export const examApi = {
       true
     ),
 
-  // ---------- Questions (per section) ----------
   loadSectionQuestions: async (
     sectionId: string
   ): Promise<ApiResponse<ApiExamQuestion[]>> =>
@@ -885,7 +889,9 @@ export const examApi = {
     ),
 };
 
-
+// ============================================================
+// Attempts API — types
+// ============================================================
 export interface ApiAttempt {
   id: string;
   examId: string;
@@ -911,8 +917,9 @@ export interface ApiAttempt {
   status: 'pending' | 'marked' | 'published';
   marked_at: string | null;
   published_at: string | null;
-  sessionVideo: string | null;      // ← ADD THIS LINE
+  sessionVideo: string | null;
 }
+
 export interface SubmitAttemptPayload {
   answers: {
     questionId: string;
@@ -926,9 +933,6 @@ export interface SubmitAttemptPayload {
   videoRecord?: string;
 }
 
-// ============================================================
-// Attempt review (admin) — full detail with exam structure
-// ============================================================
 export interface ApiAttemptReview extends ApiAttempt {
   exam: {
     id: string;
@@ -963,21 +967,18 @@ export interface ApiAttemptReview extends ApiAttempt {
   }[];
 }
 
-
-
 export const attemptApi = {
   mine: async (): Promise<ApiResponse<ApiAttempt[]>> =>
     request<ApiAttempt[]>('/attempts/mine/'),
 
-
   adminReview: async (
-  attemptId: string
-): Promise<ApiResponse<ApiAttemptReview>> =>
-  request<ApiAttemptReview>(
-    `/attempts/${attemptId}/review/`,
-    { method: 'GET' },
-    true
-  ),
+    attemptId: string
+  ): Promise<ApiResponse<ApiAttemptReview>> =>
+    request<ApiAttemptReview>(
+      `/attempts/${attemptId}/review/`,
+      { method: 'GET' },
+      true
+    ),
 
   get: async (attemptId: string): Promise<ApiResponse<ApiAttempt>> =>
     request<ApiAttempt>(`/attempts/${attemptId}/`),
@@ -1021,11 +1022,139 @@ export const attemptApi = {
 };
 
 // ============================================================
+// Certificates API — types
+// ============================================================
+// ============================================================
+// Certificates API — types
+// ============================================================
+export interface ApiCertificate {
+  id: string;                          // UUID — the verification ID
+  certificate_number: string;
+  courseId: string;
+  courseTitle: string;
+  studentName: string;
+  studentUsername: string;
+  grade: string | null;
+  final_percentage: string | null;
+  verification_url: string | null;
+
+  /** Clean PNG, base64 data URL. */
+  image_data_url: string | null;
+  /** Watermarked PNG, base64 data URL. */
+  image_watermarked_data_url: string | null;
+
+  status: 'issued' | 'pending' | 'revoked' | string;
+
+  /** Admin publish flag. */
+  is_published: boolean;
+
+  issued_at: string;
+  revoked_at: string | null;
+  revoke_reason: string | null;
+
+  /** Attached by the backend at fetch time. */
+  displayImageDataUrl?: string | null;
+  watermarkedImageDataUrl?: string | null;
+  cleanImageDataUrl?: string | null;
+  watermarked?: boolean;
+  canDownload?: boolean;
+  isPublished?: boolean;
+}
+
+export interface ApiCertificatePreview {
+  displayImageDataUrl: string;
+  watermarkedImageDataUrl?: string;
+  cleanImageDataUrl?: string | null;
+  watermarked: boolean;
+  canDownload: boolean;
+  certificate_number?: string | null;
+  courseTitle?: string;
+  final_percentage?: number | null;
+}
+
+export interface ApiCertificateVerifyResult {
+  valid: boolean;
+  certificateId?: string;
+  certificateNumber?: string;
+  studentName?: string;
+  courseTitle?: string;
+  issuedAt?: string;
+  reason?: string;
+}
+
+// ============================================================
+// Certificates API — client
+// ============================================================
+export const certificateApi = {
+  /** Owner's certificates, synced against enrollments. */
+  mine: async (): Promise<ApiResponse<ApiCertificate[]>> =>
+    request<ApiCertificate[]>('/certificates/mine/'),
+
+  /** Single certificate by UUID (owner or admin). */
+  get: async (id: string): Promise<ApiResponse<ApiCertificate>> =>
+    request<ApiCertificate>(`/certificates/${id}/`),
+
+  /** Template preview for a course the user is not enrolled in. */
+  preview: async (
+    courseId: string
+  ): Promise<ApiResponse<ApiCertificatePreview>> =>
+    request<ApiCertificatePreview>(
+      `/certificates/preview/${courseId}/`,
+      { method: 'GET' },
+      true
+    ),
+
+  /** Public verification by UUID — no auth needed. */
+  verify: async (
+    certificateId: string
+  ): Promise<ApiResponse<ApiCertificateVerifyResult>> =>
+    request<ApiCertificateVerifyResult>(
+      `/certificates/verify/${certificateId}/`,
+      { method: 'GET' },
+      false
+    ),
+
+  /** Admin: read-only list of every certificate. */
+  adminList: async (params?: {
+    search?: string;
+    status?: string;
+    published?: 'true' | 'false';
+  }): Promise<ApiResponse<ApiCertificate[]>> => {
+    const qs = new URLSearchParams();
+    if (params?.search) qs.set('search', params.search);
+    if (params?.status && params.status !== 'all') {
+      qs.set('status', params.status);
+    }
+    if (params?.published) qs.set('published', params.published);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<ApiCertificate[]>(
+      `/certificates/admin/${suffix}`,
+      { method: 'GET' },
+      true
+    );
+  },
+
+  /** Admin: hide (unpublish) or publish a certificate. */
+  adminSetPublished: async (
+    certificateId: string,
+    isPublished: boolean
+  ): Promise<ApiResponse<ApiCertificate>> =>
+    request<ApiCertificate>(
+      `/certificates/admin/${certificateId}/publish/`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ is_published: isPublished }),
+      },
+      true
+    ),
+};
+
+// ============================================================
 // Registration video (logged-in user)
 // ============================================================
 export const getMyRegistrationVideo =
   async (): Promise<RegistrationVideo | null> => {
-    const res = await request<RegistrationVideo>("/auth/me/video/");
+    const res = await request<RegistrationVideo>('/auth/me/video/');
     if (!res.success) return null;
     return (res.data as RegistrationVideo) ?? null;
   };
@@ -1039,6 +1168,8 @@ export default {
   paymentApi,
   enrollmentApi,
   examApi,
+  attemptApi,
+  certificateApi,
   setTokens,
   getAccessToken,
   getRefreshToken,

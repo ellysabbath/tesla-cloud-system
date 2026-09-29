@@ -46,6 +46,7 @@ import AdminLayout from './components/layout/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminMyProfile from './pages/admin/MyProfile';
 import AdminSettings from './pages/admin/Settings';
+import AdminCertificatesViewModal from './pages/admin/AdminCertificatesViewModal';
 import Accounts from './pages/admin/Accounts';
 import AdminExams from './pages/admin/AdminExams';
 import AdminExamBuilder from './pages/admin/ExamBuilder';
@@ -54,6 +55,7 @@ import AdminAnswers from './pages/admin/AdminAnswers';
 import AdminCertificates from './pages/admin/AdminCertificates';
 import ManageUsers from './pages/admin/ManageUsers';
 import Payments from './pages/admin/Payments';
+import MyCertificateDetail from './pages/dashboard/MyCertificateDetail';
 
 const App: React.FC = () => {
   return (
@@ -104,6 +106,8 @@ const App: React.FC = () => {
             />
             <Route path="/candidate/exams" element={<CandidateExams />} />
             <Route path="/candidate/exams/:id" element={<TakeExam />} />
+            <Route path="/my-certificates/:id"element={<MyCertificateDetail />}/>
+
             <Route
               path="/candidate/exams/:id/result"
               element={<ExamResult />}
@@ -122,6 +126,8 @@ const App: React.FC = () => {
             <Route path="/admin/my-profile" element={<AdminMyProfile />} />
             <Route path="/admin/settings" element={<AdminSettings />} />
             <Route path="/admin/payments" element={<Payments />} />
+            <Route
+         path="/admin/certificates/:id" element={<AdminCertificatesViewModal/>} />
 
             {/* Exam management */}
             <Route path="/admin/exams" element={<AdminExams />} />
