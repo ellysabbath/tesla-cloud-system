@@ -64,7 +64,11 @@ const formatDateTime = (d: string | null): string =>
     : '—';
 
 const formatPercent = (v: string | number | null | undefined): string =>
-  v === null || v === undefined || v === '' ? '—' : `${Number(v).toFixed(2)}%`;
+  v === null || v === undefined || v === ''
+    ? '—'
+    : `${Number(v).toFixed(2)}%`;
+
+const letterOf = (i: number) => String.fromCharCode(65 + i);
 
 // ============================================================
 // Main component
@@ -79,9 +83,6 @@ const AdminAnswers: React.FC = () => {
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [isActing, setIsActing] = useState(false);
 
-  // ============================================================
-  // Load list
-  // ============================================================
   const load = useCallback(async () => {
     setIsLoading(true);
     setError('');
@@ -110,9 +111,6 @@ const AdminAnswers: React.FC = () => {
     setTimeout(() => setFlash(''), 2500);
   };
 
-  // ============================================================
-  // Filter + search
-  // ============================================================
   const filtered = useMemo(() => {
     let list = [...attempts];
 
@@ -153,9 +151,6 @@ const AdminAnswers: React.FC = () => {
     return `${Math.round((passed / attempts.length) * 100)}%`;
   }, [attempts]);
 
-  // ============================================================
-  // Actions
-  // ============================================================
   const handleSavePractical = async (
     attemptId: string,
     score: number,
@@ -199,9 +194,6 @@ const AdminAnswers: React.FC = () => {
     }
   };
 
-  // ============================================================
-  // Render
-  // ============================================================
   return (
     <div className="space-y-6">
       {flash && (
@@ -226,7 +218,6 @@ const AdminAnswers: React.FC = () => {
         </Card>
       )}
 
-      {/* Filters */}
       <Card className="p-4">
         <div className="flex flex-col md:flex-row md:items-center gap-4">
           <div className="flex flex-wrap gap-2">
@@ -267,7 +258,6 @@ const AdminAnswers: React.FC = () => {
         </div>
       </Card>
 
-      {/* Table */}
       {isLoading ? (
         <Card className="p-12 text-center text-gray-400">
           Loading submissions...
@@ -421,7 +411,9 @@ const AdminAnswers: React.FC = () => {
                     <td className="px-4 py-3 text-right">
                       <Button
                         size="small"
-                        variant={a.status === 'pending' ? 'primary' : 'outline'}
+                        variant={
+                          a.status === 'pending' ? 'primary' : 'outline'
+                        }
                         onClick={() => setReviewingId(a.id)}
                       >
                         {a.status === 'pending' ? 'Review' : 'Open'}
@@ -446,7 +438,6 @@ const AdminAnswers: React.FC = () => {
         </Card>
       )}
 
-      {/* Review modal */}
       {reviewingId && (
         <ReviewModal
           attemptId={reviewingId}
@@ -461,7 +452,7 @@ const AdminAnswers: React.FC = () => {
 };
 
 // ============================================================
-// Review modal — loads full review payload
+// Review modal
 // ============================================================
 interface ReviewModalProps {
   attemptId: string;
@@ -485,7 +476,6 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
   const [scoreInput, setScoreInput] = useState('');
   const [maxInput, setMaxInput] = useState('');
 
-  // ---------- Load full review ----------
   useEffect(() => {
     let cancelled = false;
 
@@ -516,7 +506,6 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
     };
   }, [attemptId]);
 
-  // ---------- Derived ----------
   const theoryPercent = review?.theory_percent
     ? Number(review.theory_percent)
     : 0;
@@ -533,19 +522,14 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
     };
   }, [scoreInput, maxInput, theoryPercent]);
 
-  // ---------- Sections (normalized) ----------
   const sections: ApiExamSection[] = useMemo(
     () => review?.exam?.sections ?? [],
     [review]
   );
 
-  // ============================================================
-  // Render
-  // ============================================================
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-start md:items-center justify-center p-4 overflow-y-auto">
       <Card className="max-w-4xl w-full my-4 max-h-[92vh] flex flex-col overflow-hidden">
-        {/* Header */}
         <div className="flex items-start justify-between px-5 py-3 border-b border-gray-200 shrink-0">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-gray-900 truncate">
@@ -564,7 +548,6 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {isLoading && (
             <div className="p-12 text-center text-gray-400">
@@ -580,7 +563,6 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
 
           {review && !isLoading && (
             <>
-              {/* Student + status */}
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-gray-900 text-white flex items-center justify-center text-sm font-semibold shrink-0">
                   {review.studentName.charAt(0)}
@@ -600,7 +582,6 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                 </span>
               </div>
 
-              {/* Score summary */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="bg-gray-50 rounded-lg p-3 text-center">
                   <p className="text-lg font-bold text-gray-900">
@@ -640,7 +621,6 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                 </div>
               </div>
 
-              {/* Video */}
               {review.sessionVideo ? (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
@@ -678,9 +658,6 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                 </div>
               )}
 
-              {/* ============================================================
-                  PER-QUESTION BREAKDOWN
-              ============================================================ */}
               {sections.length > 0 && (
                 <div className="border-t border-gray-200 pt-4">
                   <h3 className="text-sm font-bold text-gray-900 mb-3">
@@ -691,6 +668,14 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                     {sections.map((section, sIdx) => {
                       const questions = section.questions ?? [];
 
+                      const questionsBefore = sections
+                        .slice(0, sIdx)
+                        .reduce(
+                          (sum, s) =>
+                            sum + (s.questions?.length ?? 0),
+                          0
+                        );
+
                       const sectionCorrect = questions.filter((q) =>
                         review.marking_results.find(
                           (m) => m.questionId === q.id
@@ -698,7 +683,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                       ).length;
 
                       return (
-                        <div key={section.id}>
+                        <div key={section.id ?? sIdx}>
                           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                             <div>
                               <p className="text-sm font-semibold text-gray-900">
@@ -722,10 +707,13 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                           ) : (
                             <div className="space-y-2">
                               {questions.map((q, qIdx) => {
-                                const questionNumber = sIdx * 100 + qIdx + 1;
-                                const marked = review.marking_results.find(
-                                  (m) => m.questionId === q.id
-                                );
+                                const questionNumber =
+                                  questionsBefore + qIdx + 1;
+
+                                const marked =
+                                  review.marking_results.find(
+                                    (m) => m.questionId === q.id
+                                  );
                                 const ans = review.answers.find(
                                   (a) => a.questionId === q.id
                                 );
@@ -760,7 +748,6 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                 </div>
               )}
 
-              {/* Practical input */}
               {review.status !== 'published' && (
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
                   <p className="text-sm font-medium mb-1">Practical Marks</p>
@@ -806,9 +793,14 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                         Live Preview
                       </p>
                       <p className="text-blue-800">
-                        Theory: {theoryPercent.toFixed(2)}% × {THEORY_WEIGHT}% ={' '}
+                        Theory: {theoryPercent.toFixed(2)}% ×{' '}
+                        {THEORY_WEIGHT}% ={' '}
                         <strong>
-                          {((theoryPercent * THEORY_WEIGHT) / 100).toFixed(2)}%
+                          {(
+                            (theoryPercent * THEORY_WEIGHT) /
+                            100
+                          ).toFixed(2)}
+                          %
                         </strong>
                       </p>
                       <p className="text-blue-800">
@@ -830,7 +822,12 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                     onClick={() => {
                       const s = Number(scoreInput);
                       const m = Number(maxInput);
-                      if (!Number.isNaN(s) && !Number.isNaN(m) && s >= 0 && m > 0) {
+                      if (
+                        !Number.isNaN(s) &&
+                        !Number.isNaN(m) &&
+                        s >= 0 &&
+                        m > 0
+                      ) {
                         onSavePractical(review.id, s, m);
                       }
                     }}
@@ -851,7 +848,6 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex flex-col sm:flex-row gap-2 px-5 py-3 border-t border-gray-200 bg-white shrink-0">
           <Button variant="secondary" fullWidth size="small" onClick={onClose}>
             Close
@@ -873,7 +869,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
 };
 
 // ============================================================
-// Per-question row
+// Per-question row — index-based matching
 // ============================================================
 interface QuestionRowProps {
   number: number;
@@ -884,8 +880,8 @@ interface QuestionRowProps {
     text_answer: string | null;
   };
   matchingAnswers: {
-    columnAId: string;
-    columnBId: string | null;
+    a_index: number;
+    b_index: number | null;
     is_correct: boolean | null;
   }[];
   isCorrect: boolean;
@@ -902,7 +898,6 @@ const QuestionReviewRow: React.FC<QuestionRowProps> = ({
   awarded,
   maxPoints,
 }) => {
-  // -------- Student's answer text --------
   const renderStudentAnswer = () => {
     if (question.type === 'multiple-choice') {
       if (!answer?.selectedOptionId) {
@@ -911,10 +906,11 @@ const QuestionReviewRow: React.FC<QuestionRowProps> = ({
       const idx = question.options.findIndex(
         (o) => o.id === answer.selectedOptionId
       );
-      if (idx === -1) return <em className="text-gray-400">Unknown option</em>;
+      if (idx === -1)
+        return <em className="text-gray-400">Unknown option</em>;
       return (
         <>
-          <strong>{String.fromCharCode(97 + idx)})</strong>{' '}
+          <strong>{letterOf(idx).toLowerCase()})</strong>{' '}
           {question.options[idx].option_text || '(empty)'}
         </>
       );
@@ -934,22 +930,19 @@ const QuestionReviewRow: React.FC<QuestionRowProps> = ({
       if (matchingAnswers.length === 0) {
         return <em className="text-gray-400">No answer</em>;
       }
+
+      const sorted = [...matchingAnswers].sort(
+        (x, y) => x.a_index - y.a_index
+      );
+
       return (
         <ul className="space-y-0.5">
-          {matchingAnswers.map((m) => {
-            const aIdx = question.column_a.findIndex(
-              (c) => c.id === m.columnAId
-            );
-            const bIdx = question.column_b.findIndex(
-              (c) => c.id === m.columnBId
-            );
-            return (
-              <li key={m.columnAId}>
-                <strong>{aIdx + 1}.</strong> →{' '}
-                {bIdx >= 0 ? String.fromCharCode(65 + bIdx) : '—'}
-              </li>
-            );
-          })}
+          {sorted.map((m) => (
+            <li key={m.a_index}>
+              <strong>{m.a_index + 1}.</strong> →{' '}
+              {m.b_index !== null ? letterOf(m.b_index) : '—'}
+            </li>
+          ))}
         </ul>
       );
     }
@@ -965,14 +958,13 @@ const QuestionReviewRow: React.FC<QuestionRowProps> = ({
     return null;
   };
 
-  // -------- Correct answer text --------
   const renderCorrectAnswer = () => {
     if (question.type === 'multiple-choice') {
       const idx = question.options.findIndex((o) => o.is_correct);
       if (idx === -1) return <em className="text-gray-400">—</em>;
       return (
         <>
-          <strong>{String.fromCharCode(97 + idx)})</strong>{' '}
+          <strong>{letterOf(idx).toLowerCase()})</strong>{' '}
           {question.options[idx].option_text || '(empty)'}
         </>
       );
@@ -984,19 +976,26 @@ const QuestionReviewRow: React.FC<QuestionRowProps> = ({
 
     if (question.type === 'matching') {
       const entries = Object.entries(question.correct_matches ?? {});
-      if (entries.length === 0) return <em className="text-gray-400">—</em>;
+      if (entries.length === 0)
+        return <em className="text-gray-400">—</em>;
+
+      const sorted = entries
+        .map(([aKey, bKey]) => ({
+          aIdx: Number(aKey),
+          bIdx: Number(bKey),
+        }))
+        .filter(
+          (p) => !Number.isNaN(p.aIdx) && !Number.isNaN(p.bIdx)
+        )
+        .sort((x, y) => x.aIdx - y.aIdx);
+
       return (
         <ul className="space-y-0.5">
-          {entries.map(([aId, bId]) => {
-            const aIdx = question.column_a.findIndex((c) => c.id === aId);
-            const bIdx = question.column_b.findIndex((c) => c.id === bId);
-            return (
-              <li key={aId}>
-                <strong>{aIdx + 1}.</strong> →{' '}
-                {bIdx >= 0 ? String.fromCharCode(65 + bIdx) : '—'}
-              </li>
-            );
-          })}
+          {sorted.map(({ aIdx, bIdx }) => (
+            <li key={aIdx}>
+              <strong>{aIdx + 1}.</strong> → {letterOf(bIdx)}
+            </li>
+          ))}
         </ul>
       );
     }
@@ -1050,7 +1049,11 @@ const QuestionReviewRow: React.FC<QuestionRowProps> = ({
             <p className="text-[13px] text-gray-900">
               <strong className="text-gray-500">Q{number}.</strong>{' '}
               {question.text || (
-                <em className="text-gray-400">(matching item)</em>
+                <em className="text-gray-400">
+                  {question.type === 'matching'
+                    ? 'Match the items in Column A with Column B.'
+                    : '(no text)'}
+                </em>
               )}
             </p>
             <span className="text-[11px] font-semibold text-gray-600 shrink-0">
@@ -1063,13 +1066,17 @@ const QuestionReviewRow: React.FC<QuestionRowProps> = ({
               <p className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-0.5">
                 Student
               </p>
-              <div className="text-gray-800">{renderStudentAnswer()}</div>
+              <div className="text-gray-800">
+                {renderStudentAnswer()}
+              </div>
             </div>
             <div className="bg-white border border-gray-200 rounded px-2 py-1">
               <p className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-0.5">
                 Correct
               </p>
-              <div className="text-gray-800">{renderCorrectAnswer()}</div>
+              <div className="text-gray-800">
+                {renderCorrectAnswer()}
+              </div>
             </div>
           </div>
         </div>

@@ -241,6 +241,7 @@ const CourseDetail: React.FC = () => {
                 <ClockIcon className="w-3 h-3" />
                 Pending Approval
               </span>
+              
             )}
           </div>
 

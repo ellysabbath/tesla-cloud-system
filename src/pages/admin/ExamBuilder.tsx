@@ -46,6 +46,7 @@ const emptyQuestion = (type: QuestionType): ExamQuestion => {
       { id: crypto.randomUUID(), text: '' },
       { id: crypto.randomUUID(), text: '' },
     ];
+    // New shape: { aIndex: bIndex } — indices, not UUIDs.
     base.correctMatches = {};
   }
 
@@ -106,7 +107,48 @@ const emptySectionFor = (kind: ExamSection['kind']): ExamSection => {
 };
 
 // ============================================================
-// Convert API → local + local → API
+// Helpers — UUID → index conversion for matching
+// ============================================================
+/**
+ * Normalize a matching question's `correctMatches` into index form.
+ *
+ * Old shape (what the backend may still return): ``{ aUuid: bUuid }``
+ * New shape (what the backend stores going forward): ``{ "0": "1" }``
+ *
+ * If the keys are already numeric strings, we return them as-is.
+ * If they look like UUIDs, we map them through `columnA` / `columnB`.
+ */
+const normalizeCorrectMatches = (
+  raw: Record<string, string> | undefined,
+  columnA: { id: string; text: string }[] | undefined,
+  columnB: { id: string; text: string }[] | undefined
+): Record<string, string> => {
+  const out: Record<string, string> = {};
+  if (!raw) return out;
+
+  for (const [aKey, bKey] of Object.entries(raw)) {
+    // If the key already resolves to a numeric index, keep it.
+    const aNumeric = /^\d+$/.test(aKey);
+    const bNumeric = /^\d+$/.test(bKey);
+
+    if (aNumeric && bNumeric) {
+      out[aKey] = bKey;
+      continue;
+    }
+
+    // Otherwise resolve against the column arrays.
+    const aIdx = columnA?.findIndex((c) => c.id === aKey) ?? -1;
+    const bIdx = columnB?.findIndex((c) => c.id === bKey) ?? -1;
+    if (aIdx < 0 || bIdx < 0) continue;
+
+    out[String(aIdx)] = String(bIdx);
+  }
+
+  return out;
+};
+
+// ============================================================
+// Convert API → local
 // ============================================================
 const fromApiSection = (s: ApiExamSection): ExamSection => {
   const kind = s.kind as ExamSection['kind'];
@@ -131,7 +173,13 @@ const fromApiSection = (s: ApiExamSection): ExamSection => {
     if (q.type === 'matching') {
       base.columnA = q.column_a.map((c) => ({ id: c.id, text: c.item_text }));
       base.columnB = q.column_b.map((c) => ({ id: c.id, text: c.item_text }));
-      base.correctMatches = q.correct_matches ?? {};
+
+      // Convert whatever came back — UUIDs or indices — to indices.
+      base.correctMatches = normalizeCorrectMatches(
+        q.correct_matches,
+        base.columnA,
+        base.columnB
+      );
     }
 
     if (q.type === 'fill-blank') {
@@ -154,6 +202,9 @@ const fromApiSection = (s: ApiExamSection): ExamSection => {
   };
 };
 
+// ============================================================
+// Convert local → API
+// ============================================================
 const toApiQuestions = (questions: ExamQuestion[]): ExamQuestionPayload[] =>
   questions.map((q) => {
     switch (q.type) {
@@ -164,20 +215,43 @@ const toApiQuestions = (questions: ExamQuestion[]): ExamQuestionPayload[] =>
           options: q.options ?? [],
           correctOptionIndex: q.correctOptionIndex ?? 0,
         };
+
       case 'true-false':
         return {
           type: 'true-false',
           text: q.text ?? '',
           correctBoolean: q.correctBoolean ?? true,
         };
-      case 'matching':
+
+      case 'matching': {
+        // `q.correctMatches` is already in index form because
+        // `normalizeCorrectMatches` was applied on load and the
+        // SectionEditor only writes index pairs.
+        const idxMatches: Record<string, string> = {};
+        for (const [aKey, bKey] of Object.entries(q.correctMatches ?? {})) {
+          const aNumeric = /^\d+$/.test(aKey);
+          const bNumeric = /^\d+$/.test(bKey);
+          if (aNumeric && bNumeric) {
+            idxMatches[aKey] = bKey;
+            continue;
+          }
+          // Defensive: if a UUID slipped through, map it.
+          const aIdx = (q.columnA ?? []).findIndex((c) => c.id === aKey);
+          const bIdx = (q.columnB ?? []).findIndex((c) => c.id === bKey);
+          if (aIdx >= 0 && bIdx >= 0) {
+            idxMatches[String(aIdx)] = String(bIdx);
+          }
+        }
+
         return {
           type: 'matching',
           text: q.text ?? '',
           columnA: q.columnA ?? [],
           columnB: q.columnB ?? [],
-          correctMatches: q.correctMatches ?? {},
+          correctMatches: idxMatches,
         };
+      }
+
       case 'fill-blank':
         return {
           type: 'fill-blank',
@@ -185,6 +259,7 @@ const toApiQuestions = (questions: ExamQuestion[]): ExamQuestionPayload[] =>
           correctText: q.correctText ?? '',
           acceptAlternatives: q.acceptAlternatives ?? [],
         };
+
       default:
         return { type: q.type, text: q.text ?? '' };
     }
@@ -490,7 +565,6 @@ const AdminExamBuilder: React.FC = () => {
   // ============================================================
   return (
     <div className="space-y-6 pb-24">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <button
@@ -562,9 +636,9 @@ const AdminExamBuilder: React.FC = () => {
               }}
               className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
             >
-              {courses.length === 0 && (
-                <option value="">No courses available</option>
-              )}
+              <option value="" disabled>
+                Select a course…
+              </option>
               {courses.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.title}

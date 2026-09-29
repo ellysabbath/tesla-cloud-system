@@ -692,7 +692,7 @@ const Payments: React.FC = () => {
       ============================================================ */}
       {reviewing && (
         <div className="fixed inset-0 bg-black/60 z-40 flex items-start md:items-center justify-center p-4 overflow-y-auto">
-          <Card className="max-w-lg w-full my-4">
+          <Card className="max-w-lg w-full my-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between px-5 py-3 border-b border-gray-200">
               <div>
                 <h2 className="text-base font-bold text-gray-900">

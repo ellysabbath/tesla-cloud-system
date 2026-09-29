@@ -21,7 +21,15 @@ const formatTime = (totalSeconds: number): string => {
     .padStart(2, '0')}`;
 };
 
-const letterOf = (i: number) => String.fromCharCode(65 + i);
+const letterOf = (i: number): string => String.fromCharCode(65 + i);
+
+const letterToIndex = (raw: string): number => {
+  const s = raw.trim().toUpperCase();
+  if (!s) return -1;
+  const code = s.charCodeAt(0);
+  if (code < 65 || code > 90) return -1;
+  return code - 65;
+};
 
 const isDesktopDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -40,7 +48,8 @@ interface LocalAnswer {
   selectedOptionId?: string | null;
   booleanAnswer?: boolean | null;
   textAnswer?: string | null;
-  matches?: Record<string, string>; // columnAId -> columnBId
+  /** For matching: { aIndex: bIndex } both as strings. */
+  matches?: Record<string, string>;
 }
 
 // ============================================================
@@ -344,7 +353,6 @@ const TakeExam: React.FC = () => {
     submittedRef.current = true;
     setSubmitting(true);
 
-    // 1. Stop recorder + grab base64 video
     let videoBase64: string | null = null;
     try {
       const rec = recorderRef.current ?? recorder;
@@ -357,7 +365,6 @@ const TakeExam: React.FC = () => {
       console.warn('Failed to stop recorder:', err);
     }
 
-    // 2. Build answers payload
     const payloadAnswers = Object.values(answersRef.current).map((a) => ({
       questionId: a.questionId,
       selectedOptionId: a.selectedOptionId ?? null,
@@ -366,7 +373,6 @@ const TakeExam: React.FC = () => {
       matches: a.matches ?? {},
     }));
 
-    // 3. Submit
     try {
       const res = await attemptApi.submit(attempt.id, {
         answers: payloadAnswers,
@@ -616,30 +622,35 @@ const TakeExam: React.FC = () => {
       )}
 
       {/* Sections + questions */}
-      {exam.sections.map((section: ApiExamSection, sIdx: number) => (
-        <div key={section.id ?? sIdx} className="mt-8">
-          <div className="bg-gray-900 text-white rounded-t-lg p-4">
-            <h2 className="font-bold text-lg">{section.title}</h2>
-            {section.instructions && (
-              <p className="text-sm text-gray-300 mt-1">
-                {section.instructions}
-              </p>
-            )}
-            <p className="text-xs text-gray-400 mt-2">
-              {section.questions?.length ?? 0} question
-              {(section.questions?.length ?? 0) !== 1 ? 's' : ''} •{' '}
-              {Number(section.points_per_question)} point
-              {Number(section.points_per_question) !== 1 ? 's' : ''} each
-            </p>
-          </div>
+      {exam.sections.map((section: ApiExamSection, sIdx: number) => {
+        const questions = section.questions ?? [];
+        const questionsBefore = (exam.sections ?? [])
+          .slice(0, sIdx)
+          .reduce((sum, s) => sum + (s.questions?.length ?? 0), 0);
 
-          <div className="border border-t-0 border-gray-200 rounded-b-lg divide-y divide-gray-100">
-            {(section.questions ?? []).map(
-              (q: ApiExamQuestion, qIdx: number) => {
+        return (
+          <div key={section.id ?? sIdx} className="mt-8">
+            <div className="bg-gray-900 text-white rounded-t-lg p-4">
+              <h2 className="font-bold text-lg">{section.title}</h2>
+              {section.instructions && (
+                <p className="text-sm text-gray-300 mt-1">
+                  {section.instructions}
+                </p>
+              )}
+              <p className="text-xs text-gray-400 mt-2">
+                {questions.length} question
+                {questions.length !== 1 ? 's' : ''} •{' '}
+                {Number(section.points_per_question)} point
+                {Number(section.points_per_question) !== 1 ? 's' : ''} each
+              </p>
+            </div>
+
+            <div className="border border-t-0 border-gray-200 rounded-b-lg divide-y divide-gray-100">
+              {questions.map((q: ApiExamQuestion, qIdx: number) => {
                 const ans: LocalAnswer = answers[q.id] ?? {
                   questionId: q.id,
                 };
-                const questionNumber = sIdx * 100 + qIdx + 1;
+                const questionNumber = questionsBefore + qIdx + 1;
 
                 return (
                   <div key={q.id} className="p-5">
@@ -658,6 +669,7 @@ const TakeExam: React.FC = () => {
                       </p>
                     </div>
 
+                    {/* ---------------- multiple choice ---------------- */}
                     {q.type === 'multiple-choice' && (
                       <div className="space-y-2 ml-11">
                         {(q.options ?? []).map((opt, i) => {
@@ -710,6 +722,7 @@ const TakeExam: React.FC = () => {
                       </div>
                     )}
 
+                    {/* ---------------- true / false ---------------- */}
                     {q.type === 'true-false' && (
                       <div className="ml-11 flex gap-3">
                         {[
@@ -737,22 +750,34 @@ const TakeExam: React.FC = () => {
                       </div>
                     )}
 
+                    {/* ---------------- matching (letter inputs, index keys) ---------------- */}
                     {q.type === 'matching' && (
                       <div className="ml-11">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
-                              Column A — Questions
+                              Column A — Type the letter from Column B
                             </p>
                             <div className="space-y-2">
                               {(q.column_a ?? []).map((a, i) => {
-                                const chosenB =
-                                  (ans.matches ?? {})[a.id] ?? '';
+                                const storedBIdx = (ans.matches ?? {})[
+                                  String(i)
+                                ];
+                                const chosenBIdx =
+                                  storedBIdx === undefined
+                                    ? -1
+                                    : Number(storedBIdx);
+                                const chosenLetter =
+                                  chosenBIdx >= 0 &&
+                                  chosenBIdx < (q.column_b ?? []).length
+                                    ? letterOf(chosenBIdx)
+                                    : '';
+
                                 return (
                                   <div
                                     key={a.id}
                                     className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ${
-                                      chosenB
+                                      chosenLetter
                                         ? 'border-black bg-gray-50'
                                         : 'border-gray-200'
                                     }`}
@@ -763,29 +788,51 @@ const TakeExam: React.FC = () => {
                                     <span className="flex-1 text-sm font-medium text-gray-900">
                                       {a.item_text || '(empty)'}
                                     </span>
-                                    <select
-                                      value={chosenB}
-                                      onChange={(e) =>
+                                    <input
+                                      type="text"
+                                      inputMode="text"
+                                      autoComplete="off"
+                                      spellCheck={false}
+                                      maxLength={1}
+                                      value={chosenLetter}
+                                      onChange={(e) => {
+                                        const letter =
+                                          e.target.value.toUpperCase();
+                                        const idx =
+                                          letterToIndex(letter);
+
+                                        const next = {
+                                          ...(ans.matches ?? {}),
+                                        };
+
+                                        if (!letter) {
+                                          delete next[String(i)];
+                                          setAnswer(q.id, {
+                                            matches: next,
+                                          });
+                                          return;
+                                        }
+
+                                        if (
+                                          idx < 0 ||
+                                          idx >=
+                                            (q.column_b ?? []).length
+                                        ) {
+                                          return;
+                                        }
+
+                                        next[String(i)] = String(idx);
                                         setAnswer(q.id, {
-                                          matches: {
-                                            ...(ans.matches ?? {}),
-                                            [a.id]: e.target.value,
-                                          },
-                                        })
-                                      }
-                                      className={`px-2 py-1 border rounded text-sm shrink-0 ${
-                                        chosenB
-                                          ? 'border-black bg-white'
-                                          : 'border-gray-300'
+                                          matches: next,
+                                        });
+                                      }}
+                                      placeholder="?"
+                                      className={`w-12 h-10 text-center text-base font-bold uppercase border-2 rounded focus:outline-none focus:border-black transition-colors ${
+                                        chosenLetter
+                                          ? 'border-black bg-white text-black'
+                                          : 'border-gray-300 bg-white text-gray-400'
                                       }`}
-                                    >
-                                      <option value="">Choose...</option>
-                                      {(q.column_b ?? []).map((b, j) => (
-                                        <option key={b.id} value={b.id}>
-                                          {letterOf(j)}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    />
                                   </div>
                                 );
                               })}
@@ -816,13 +863,19 @@ const TakeExam: React.FC = () => {
 
                         <p className="text-[11px] text-gray-500 mt-3">
                           {(q.column_a ?? []).filter(
-                            (a) => (ans.matches ?? {})[a.id]
+                            (_, i) => (ans.matches ?? {})[String(i)]
                           ).length}{' '}
                           of {(q.column_a ?? []).length} matched
+                          {(q.column_b ?? []).length > 0 &&
+                            ` • type A–${letterOf(
+                              (q.column_b ?? []).length - 1
+                            )}`}
+                          .
                         </p>
                       </div>
                     )}
 
+                    {/* ---------------- fill in the blank ---------------- */}
                     {q.type === 'fill-blank' && (
                       <div className="ml-11">
                         <input
@@ -838,11 +891,11 @@ const TakeExam: React.FC = () => {
                     )}
                   </div>
                 );
-              }
-            )}
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* Bottom submit bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-3 px-4 lg:pl-72 z-20">

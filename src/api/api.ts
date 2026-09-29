@@ -950,8 +950,8 @@ export interface ApiAttemptReview extends ApiAttempt {
   matching_answers: {
     id: string;
     questionId: string;
-    columnAId: string;
-    columnBId: string | null;
+    a_index: number;
+    b_index: number | null;
     is_correct: boolean | null;
   }[];
   marking_results: {
