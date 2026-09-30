@@ -352,19 +352,19 @@ export const teamMembers: TeamMember[] = [
   },
   {
     id: '2',
-    name: 'Team Member 1',
-    role: 'Instructor',
+    name: 'Ruth Paul Mwitwa',
+    role: 'Program Director',
     image: '/images/team/member1.jpg',
   },
   {
     id: '3',
-    name: 'Team Member 2',
+    name: 'Adam  Christian',
     role: 'Practical Coordinator',
     image: '/images/team/member2.jpg',
   },
   {
     id: '4',
-    name: 'Team Member 3',
+    name: 'Abas Arach',
     role: 'Student Support',
     image: '/images/team/member3.jpg',
   },

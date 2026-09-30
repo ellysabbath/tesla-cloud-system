@@ -16,17 +16,17 @@ const Leadership: React.FC = () => {
       bio: 'A software developer who founded Tesla Cloud Institute in 2026 with a mission to bring practical computer skills to the Tanzanian youth.',
     },
     {
-      name: 'Team Member 1',
-      role: 'Instructor — Programming',
+      name: 'Ruth Paul Mwitwa',
+      role: 'Program Director',
       bio: 'Specializes in teaching high-level programming languages like Java, Python, and PHP with a practical-first approach.',
     },
     {
-      name: 'Team Member 2',
+      name: 'Adam Christian',
       role: 'Practical Coordinator',
       bio: 'Coordinates all practical sessions and ensures every student gets hands-on experience with real projects.',
     },
     {
-      name: 'Team Member 3',
+      name: 'Abas Arach',
       role: 'Student Support',
       bio: 'Provides guidance and support to students throughout their learning journey at Tesla Cloud.',
     },

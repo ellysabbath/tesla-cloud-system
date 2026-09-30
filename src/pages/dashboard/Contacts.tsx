@@ -54,7 +54,7 @@ const Contacts: React.FC = () => {
     },
     {
       label: 'Phone',
-      value: '+255 XXX XXX XXX',
+      value: '+255 742 578 691',
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -64,7 +64,7 @@ const Contacts: React.FC = () => {
     },
     {
       label: 'Working Hours',
-      value: 'Mon – Sat: 8:00 AM – 6:00 PM',
+      value: 'Sun – Fri: 8:00 AM – 6:00 PM',
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -191,7 +191,7 @@ const Contacts: React.FC = () => {
                 </p>
                 <div className="space-y-3 text-sm">
                   <p className="text-gray-300">
-                    <strong className="text-white">Address:</strong> Dar es Salaam, Tanzania
+                    <strong className="text-white">Address:</strong> Dodoma , Tanzania
                   </p>
                   <p className="text-gray-300">
                     <strong className="text-white">Enrollment:</strong> Open for 2026

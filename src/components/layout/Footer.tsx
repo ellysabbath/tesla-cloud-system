@@ -93,7 +93,7 @@ const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
             <ul className="space-y-2 text-sm text-gray-400">
               <li>Tanzania</li>
               <li>info@teslacloud.ac.tz</li>
-              <li>+255 XXX XXX XXX</li>
+              <li>+255 742 578 691</li>
             </ul>
           </div>
         </div>
