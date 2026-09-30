@@ -1,15 +1,116 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, Navigate } from 'react-router-dom';
 import TopBar from '../components/layout/TopBar';
 import Sidebar from '../components/layout/Sidebar';
 import Footer from '../components/layout/Footer';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
+import { authApi, isAuthenticated } from '../api/api';
 import { newsItems, testimonials, teamMembers } from '../data/mockData';
 
+// ============================================================
+// Role helpers
+// ============================================================
+interface CachedUser {
+  role?: string;
+}
+
+const readStoredRole = (): string | null => {
+  try {
+    const raw = localStorage.getItem('user');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedUser;
+    return parsed?.role ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const homeForRole = (role: string | null): string => {
+  const r = (role ?? '').toLowerCase();
+  if (r === 'admin' || r === 'super-admin') return '/admin/dashboard';
+  return '/dashboard';
+};
+
+// ============================================================
+// Component
+// ============================================================
 const LandingPage: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Redirect state
+  const [redirectTo, setRedirectTo] = useState<string | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(
+    () => isAuthenticated() && !readStoredRole()
+  );
+
+  // ------------------------------------------------------------
+  // On mount: if the visitor is already signed in, decide where
+  // to send them. If we already know their role from localStorage,
+  // redirect immediately without a network round-trip.
+  // ------------------------------------------------------------
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      setIsCheckingAuth(false);
+      return;
+    }
+
+    const cachedRole = readStoredRole();
+    if (cachedRole) {
+      setRedirectTo(homeForRole(cachedRole));
+      return;
+    }
+
+    // Role not cached → ask the backend once.
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authApi.me();
+        if (!cancelled && res.success && res.data) {
+          const u = res.data as CachedUser;
+          const role = u.role ?? 'student';
+          try {
+            localStorage.setItem('user', JSON.stringify(u));
+          } catch {
+            /* quota — ignore */
+          }
+          setRedirectTo(homeForRole(role));
+        } else if (!cancelled) {
+          // Could not resolve role → stay on landing page
+          setIsCheckingAuth(false);
+        }
+      } catch {
+        if (!cancelled) setIsCheckingAuth(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ------------------------------------------------------------
+  // While we're checking, render a minimal loader so the
+  // marketing page never flashes for signed-in users.
+  // ------------------------------------------------------------
+  if (isCheckingAuth && !redirectTo) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">
+        Loading…
+      </div>
+    );
+  }
+
+  // ------------------------------------------------------------
+  // Signed in → straight to their dashboard
+  // ------------------------------------------------------------
+  if (redirectTo) {
+    return <Navigate to={redirectTo} replace />;
+  }
+
+  // ------------------------------------------------------------
+  // Not signed in → show the normal landing page
+  // ------------------------------------------------------------
   const learnItems = [
     'Computer Basics',
     'Introduction to Computer Programming',
@@ -47,7 +148,8 @@ const LandingPage: React.FC = () => {
         <section
           className="relative bg-black text-white py-20 lg:py-32"
           style={{
-            backgroundImage: 'linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(/images/hero-bg.jpg)',
+            backgroundImage:
+              'linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(/images/hero-bg.jpg)',
             backgroundSize: 'cover',
             backgroundPosition: 'center',
           }}
@@ -57,7 +159,7 @@ const LandingPage: React.FC = () => {
               <h1 className="text-3xl lg:text-5xl font-bold mb-6 leading-tight">
                 BECOME A BENEFICIARY OF TECHNOLOGY AT AN AFFORDABLE COST
               </h1>
-              
+
               <div className="mb-8">
                 <h2 className="text-xl lg:text-2xl font-semibold mb-4">
                   HERE YOU WILL LEARN:
@@ -98,10 +200,14 @@ const LandingPage: React.FC = () => {
                     </div>
                     <div>
                       <h4 className="font-semibold">{testimonial.name}</h4>
-                      <p className="text-sm text-gray-600">{testimonial.role}</p>
+                      <p className="text-sm text-gray-600">
+                        {testimonial.role}
+                      </p>
                     </div>
                   </div>
-                  <p className="text-gray-700 italic">"{testimonial.message}"</p>
+                  <p className="text-gray-700 italic">
+                    "{testimonial.message}"
+                  </p>
                 </Card>
               ))}
             </div>
@@ -118,7 +224,9 @@ const LandingPage: React.FC = () => {
               {newsItems.map((news) => (
                 <Card key={news.id} className="overflow-hidden">
                   <div className="p-6">
-                    <h3 className="text-lg font-semibold mb-2">{news.title}</h3>
+                    <h3 className="text-lg font-semibold mb-2">
+                      {news.title}
+                    </h3>
                     <p className="text-sm text-gray-500 mb-3">
                       {formatDate(news.createdAt)}
                     </p>

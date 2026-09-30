@@ -4,9 +4,47 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { authApi } from '../../api/api';
 
+// ============================================================
+// Role helpers
+// ============================================================
+interface LoginUserShape {
+  role?: string;
+  [key: string]: unknown;
+}
+
+const readRoleFromResponse = (response: unknown): string | null => {
+  if (!response || typeof response !== 'object') return null;
+  const r = response as Record<string, unknown>;
+
+  // Common shapes: response.user.role, response.data.role, response.role
+  const candidates: unknown[] = [
+    (r.user as LoginUserShape | undefined)?.role,
+    (r.data as LoginUserShape | undefined)?.role,
+    r.role,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim().toLowerCase();
+  }
+  return null;
+};
+
+const homeForRole = (role: string | null): string => {
+  const r = (role ?? '').toLowerCase();
+  if (r === 'admin' || r === 'super-admin') return '/admin/dashboard';
+  return '/dashboard';
+};
+
+// ============================================================
+// Component
+// ============================================================
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Where the user was headed before being bounced to /signin
+  const from =
+    (location.state as { from?: string } | null)?.from ?? '';
 
   // Optional info message passed from Register / AccountVerify / PasswordReset
   const incomingInfo =
@@ -56,9 +94,50 @@ const Login: React.FC = () => {
       const response = await authApi.login(formData);
 
       if (response.success) {
-        // JWT access + refresh are now held in memory inside api.ts.
-        // No localStorage is used.
-        navigate('/dashboard');
+        // ------------------------------------------------------
+        // 1) Persist the user (role) so AuthGuard / RoleRedirect
+        //    can make decisions instantly on the next page.
+        // ------------------------------------------------------
+        const role = readRoleFromResponse(response);
+
+        const cachedUser =
+          (response.user as LoginUserShape | undefined) ??
+          (response.data as LoginUserShape | undefined);
+
+        if (cachedUser) {
+          try {
+            localStorage.setItem('user', JSON.stringify(cachedUser));
+          } catch {
+            /* quota — ignore */
+          }
+        } else if (role) {
+          // Minimal cache so the guard knows the role immediately
+          try {
+            localStorage.setItem('user', JSON.stringify({ role }));
+          } catch {
+            /* quota — ignore */
+          }
+        }
+
+        // ------------------------------------------------------
+        // 2) Decide where to send them
+        //    a) If they came from a specific path → send them back
+        //       ONLY if that path is allowed for their role.
+        //    b) Otherwise → role's default home.
+        // ------------------------------------------------------
+        const isAdmin = role === 'admin' || role === 'super-admin';
+        const target = homeForRole(role);
+
+        const backIsAdminPath =
+          from.startsWith('/admin/') || from === '/admin';
+        const backIsStudentPath = !backIsAdminPath;
+
+        const safeToReturn =
+          from &&
+          ((isAdmin && backIsAdminPath) ||
+            (!isAdmin && backIsStudentPath));
+
+        navigate(safeToReturn ? from : target, { replace: true });
         return;
       }
 
@@ -110,7 +189,9 @@ const Login: React.FC = () => {
         );
         setNeedsVerification(false);
       } else {
-        setError(response.message || 'Could not resend the verification email.');
+        setError(
+          response.message || 'Could not resend the verification email.'
+        );
       }
     } catch (err) {
       console.error('Resend error:', err);
@@ -135,7 +216,7 @@ const Login: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-8">
-          {/* Info banner (from Register / AccountVerify / PasswordReset) */}
+          {/* Info banner */}
           {info && !error && (
             <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded mb-6 text-sm flex items-start gap-2">
               <svg

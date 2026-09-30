@@ -6,7 +6,13 @@ import {
   examApi,
   paymentApi,
 } from '../../api/api';
-import type { ApiAttempt, ApiExam, ApiPayment, AdminUserRow } from '../../api/api';
+import type {
+  ApiAttempt,
+  ApiExam,
+  ApiPayment,
+  AdminUserRow,
+} from '../../api/api';
+import teslaLogo from '../../assets/tesla.png';
 
 // ============================================================
 // Types
@@ -79,6 +85,13 @@ const PaymentsIcon = (
   </svg>
 );
 
+const NewsIcon = (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+  </svg>
+);
+
 const LogoutIcon = (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -91,36 +104,13 @@ const LogoutIcon = (
 // ============================================================
 const NAV_LINKS: NavLink[] = [
   { label: 'Dashboard', path: '/admin/dashboard', icon: DashboardIcon },
-  {
-    label: 'Accounts',
-    path: '/accounts',
-    icon: AccountsIcon,
-    badgeKey: 'accounts',
-  },
-  {
-    label: 'Exams',
-    path: '/admin/exams',
-    icon: ExamsIcon,
-    badgeKey: 'exams',
-  },
+  { label: 'Accounts', path: '/accounts', icon: AccountsIcon, badgeKey: 'accounts' },
+  { label: 'Exams', path: '/admin/exams', icon: ExamsIcon, badgeKey: 'exams' },
   { label: 'Courses', path: '/admin/courses', icon: CoursesIcon },
-  {
-    label: 'Answers',
-    path: '/admin/answers',
-    icon: AnswersIcon,
-    badgeKey: 'answers',
-  },
-  {
-    label: 'Certificates',
-    path: '/admin/certificates',
-    icon: CertificatesIcon,
-  },
-  {
-    label: 'Payments',
-    path: '/admin/payments',
-    icon: PaymentsIcon,
-    badgeKey: 'payments',
-  },
+  { label: 'Answers', path: '/admin/answers', icon: AnswersIcon, badgeKey: 'answers' },
+  { label: 'Certificates', path: '/admin/certificates', icon: CertificatesIcon },
+  { label: 'Payments', path: '/admin/payments', icon: PaymentsIcon, badgeKey: 'payments' },
+  { label: 'News & Updates', path: '/admin/news', icon: NewsIcon },
 ];
 
 // ============================================================
@@ -147,11 +137,8 @@ const fetchBadgeCounts = async (): Promise<BadgeCounts> => {
     ? (paymentsRes.data as ApiPayment[])
     : [];
 
-  // `authApi.adminListUsers` may return a `pagination.total` — prefer
-  // that over the length of the (page-limited) array when present.
   const pendingAccounts =
-    (usersRes.pagination?.total as number | undefined) ??
-    users.length;
+    (usersRes.pagination?.total as number | undefined) ?? users.length;
 
   return {
     accounts: pendingAccounts,
@@ -177,22 +164,18 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose }) => {
       const counts = await fetchBadgeCounts();
       setBadges(counts);
     } catch (err) {
-      // Sidebar badges are non-critical — swallow errors silently.
       console.warn('[AdminSidebar] badge refresh failed:', err);
     }
   }, []);
 
-  // Initial fetch
   useEffect(() => {
     refreshBadges();
   }, [refreshBadges]);
 
-  // Refetch whenever the route changes, so counts stay fresh.
   useEffect(() => {
     refreshBadges();
   }, [location.pathname, refreshBadges]);
 
-  // Refetch on window focus (debounced).
   useEffect(() => {
     const onFocus = () => {
       if (focusTimer.current) window.clearTimeout(focusTimer.current);
@@ -209,18 +192,14 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose }) => {
 
   // ---------- Helpers ----------
   const isActive = (path: string) =>
-    location.pathname === path ||
-    // Treat nested routes as active (e.g. /admin/exams/:id/edit)
-    location.pathname.startsWith(path + '/');
+    location.pathname === path || location.pathname.startsWith(path + '/');
 
   const handleLogout = async () => {
     try {
-      await authApi.logout();   // clears tokens + fires "auth:logout"
+      await authApi.logout();
     } catch (err) {
       console.warn('[AdminSidebar] logout API failed:', err);
     } finally {
-      // Belt-and-braces: authApi.logout already calls clearTokens(),
-      // but remove the extra keys the app uses too.
       localStorage.removeItem('user');
       localStorage.removeItem('keepMeLoggedIn');
       navigate('/signin');
@@ -228,7 +207,6 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose }) => {
   };
 
   const handleLinkClick = () => {
-    // Close drawer on small screens only.
     if (window.innerWidth < 1024) onClose();
   };
 
@@ -254,14 +232,25 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose }) => {
       >
         {/* Header */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
-          <div>
-            <p className="text-base font-bold tracking-tight text-white">
-              TESLA CLOUD
-            </p>
-            <p className="text-[10px] uppercase tracking-widest text-gray-500">
-              Admin Panel
-            </p>
-          </div>
+          <Link
+            to="/admin/dashboard"
+            onClick={handleLinkClick}
+            className="flex items-center gap-2"
+          >
+            <img
+              src={teslaLogo}
+              alt="Tesla Cloud"
+              className="w-8 h-8 object-contain bg-white rounded p-0.5"
+            />
+            <div>
+              <p className="text-base font-bold tracking-tight text-white">
+                TESLA CLOUD
+              </p>
+              <p className="text-[10px] uppercase tracking-widest text-gray-500">
+                Admin Panel
+              </p>
+            </div>
+          </Link>
           <button
             onClick={onClose}
             className="p-2 rounded hover:bg-gray-800 transition-colors lg:hidden text-gray-400"

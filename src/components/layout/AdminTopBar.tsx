@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { authApi, notificationApi } from '../../api/api';
-import type { ApiNotification } from '../../api/api';
+import { authApi, notificationApi, newsApi } from '../../api/api';
+import type { ApiNotification, ApiNews } from '../../api/api';
 
 // ============================================================
 // Types
@@ -19,10 +19,11 @@ interface AdminTopBarProps {
   isSidebarOpen: boolean;
 }
 
-const POLL_MS = 60_000; // refresh unread count every 60s
+const POLL_MS = 60_000; // refresh counts every 60s
+const NEWS_SEEN_KEY = 'tesla_admin_news_seen_ids';
 
 // ============================================================
-// Fallback — read what we already stored at login.
+// Fallback - read what we already stored at login.
 // ============================================================
 const readStoredUser = (): CurrentUser | null => {
   try {
@@ -66,6 +67,25 @@ const typeColor: Record<string, string> = {
   system: 'bg-gray-100 text-gray-700',
 };
 
+const readSeenNewsIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem(NEWS_SEEN_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeSeenNewsIds = (ids: string[]) => {
+  try {
+    localStorage.setItem(NEWS_SEEN_KEY, JSON.stringify(ids));
+  } catch {
+    /* quota - ignore */
+  }
+};
+
 // ============================================================
 // Component
 // ============================================================
@@ -78,9 +98,11 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
   // Dropdowns
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showNews, setShowNews] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const notifRef = useRef<HTMLDivElement | null>(null);
+  const newsRef = useRef<HTMLDivElement | null>(null);
 
   // User
   const [user, setUser] = useState<CurrentUser | null>(() => readStoredUser());
@@ -90,6 +112,11 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoadingNotifs, setIsLoadingNotifs] = useState(false);
+
+  // News
+  const [newsItems, setNewsItems] = useState<ApiNews[]>([]);
+  const [newNewsCount, setNewNewsCount] = useState(0);
+  const [isLoadingNews, setIsLoadingNews] = useState(false);
 
   // ============================================================
   // Fetch current user
@@ -104,7 +131,7 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
         try {
           localStorage.setItem('user', JSON.stringify(u));
         } catch {
-          /* quota — ignore */
+          /* quota - ignore */
         }
       }
     } catch (err) {
@@ -155,11 +182,58 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
     }
   }, []);
 
+  // ============================================================
+  // Load news
+  // ============================================================
+  const loadNews = useCallback(async () => {
+    setIsLoadingNews(true);
+    try {
+      const res = await newsApi.list({ limit: 20 });
+      if (res.success && Array.isArray(res.data)) {
+        const items = res.data as ApiNews[];
+        setNewsItems(items);
+
+        const seenIds = new Set(readSeenNewsIds());
+        const newCount = items.filter((n) => !seenIds.has(n.id)).length;
+        setNewNewsCount(newCount);
+      }
+    } catch (err) {
+      console.error('Load news error:', err);
+    } finally {
+      setIsLoadingNews(false);
+    }
+  }, []);
+
+  const refreshNewNewsCount = useCallback(async () => {
+    try {
+      const res = await newsApi.list({ limit: 20 });
+      if (res.success && Array.isArray(res.data)) {
+        const items = res.data as ApiNews[];
+        const seenIds = new Set(readSeenNewsIds());
+        const newCount = items.filter((n) => !seenIds.has(n.id)).length;
+        setNewNewsCount(newCount);
+      }
+    } catch {
+      /* silent */
+    }
+  }, []);
+
   useEffect(() => {
     loadNotifications();
-    const id = setInterval(refreshUnreadCount, POLL_MS);
+    loadNews();
+
+    const id = setInterval(() => {
+      refreshUnreadCount();
+      refreshNewNewsCount();
+    }, POLL_MS);
+
     return () => clearInterval(id);
-  }, [loadNotifications, refreshUnreadCount]);
+  }, [
+    loadNotifications,
+    loadNews,
+    refreshUnreadCount,
+    refreshNewNewsCount,
+  ]);
 
   // ============================================================
   // Click-outside to close dropdowns
@@ -173,6 +247,9 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
       if (notifRef.current && !notifRef.current.contains(target)) {
         setShowNotifications(false);
       }
+      if (newsRef.current && !newsRef.current.contains(target)) {
+        setShowNews(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -185,6 +262,7 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
     const next = !showNotifications;
     setShowNotifications(next);
     setShowDropdown(false);
+    setShowNews(false);
     if (next) loadNotifications();
   };
 
@@ -231,6 +309,34 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
   };
 
   // ============================================================
+  // News handlers
+  // ============================================================
+  const handleOpenNews = () => {
+    const next = !showNews;
+    setShowNews(next);
+    setShowDropdown(false);
+    setShowNotifications(false);
+    if (next) {
+      loadNews();
+      // Mark all current items as seen the moment the dropdown opens.
+      const ids = newsItems.map((n) => n.id);
+      const merged = Array.from(new Set([...readSeenNewsIds(), ...ids]));
+      writeSeenNewsIds(merged);
+      setNewNewsCount(0);
+    }
+  };
+
+  const handleOpenNewsPage = () => {
+    // Same as opening the dropdown: mark as seen.
+    const ids = newsItems.map((n) => n.id);
+    const merged = Array.from(new Set([...readSeenNewsIds(), ...ids]));
+    writeSeenNewsIds(merged);
+    setNewNewsCount(0);
+    setShowNews(false);
+    navigate('/admin/news');
+  };
+
+  // ============================================================
   // Logout
   // ============================================================
   const handleLogout = async () => {
@@ -245,7 +351,10 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
         ).logout();
       }
     } catch (err) {
-      console.warn('Logout API call failed, clearing local state anyway:', err);
+      console.warn(
+        'Logout API call failed, clearing local state anyway:',
+        err
+      );
     } finally {
       localStorage.removeItem('user');
       localStorage.removeItem('keepMeLoggedIn');
@@ -289,8 +398,109 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
           </div>
         </div>
 
-        {/* Right: notifications + profile */}
+        {/* Right: news + notifications + profile */}
         <div className="flex items-center gap-2">
+          {/* ---------- News ---------- */}
+          <div className="relative" ref={newsRef}>
+            <button
+              onClick={handleOpenNews}
+              className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              aria-label="News and updates"
+              aria-haspopup="true"
+              aria-expanded={showNews}
+            >
+              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+              </svg>
+
+              {newNewsCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 bg-blue-600 text-white text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                  {newNewsCount > 9 ? '9+' : newNewsCount}
+                </span>
+              )}
+            </button>
+
+            {showNews && (
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      News &amp; Updates
+                    </p>
+                    {newNewsCount > 0 && (
+                      <p className="text-xs text-gray-500">
+                        {newNewsCount} new
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleOpenNewsPage}
+                    className="text-xs text-black hover:underline"
+                  >
+                    Manage
+                  </button>
+                </div>
+
+                <div className="max-h-80 overflow-y-auto">
+                  {isLoadingNews ? (
+                    <div className="px-4 py-8 text-center text-gray-400 text-sm">
+                      Loading...
+                    </div>
+                  ) : newsItems.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                      No news yet.
+                    </div>
+                  ) : (
+                    newsItems.slice(0, 6).map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={handleOpenNewsPage}
+                        className="w-full text-left px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          {n.pinned && (
+                            <span className="text-[10px] font-bold uppercase tracking-wider bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
+                              Pinned
+                            </span>
+                          )}
+                          <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                            {n.category}
+                          </span>
+                          <span className="text-[10px] text-gray-400">
+                            {timeAgo(n.created_at)}
+                          </span>
+                          {!n.is_published && (
+                            <span className="text-[10px] font-bold uppercase tracking-wider bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
+                              Hidden
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm font-semibold text-gray-900 truncate">
+                          {n.title}
+                        </p>
+                        {n.body && (
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                            {n.body}
+                          </p>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
+                  <button
+                    onClick={handleOpenNewsPage}
+                    className="block w-full text-center text-xs font-medium text-gray-700 hover:text-black"
+                  >
+                    Manage news
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* ---------- Notifications ---------- */}
           <div className="relative" ref={notifRef}>
             <button
@@ -313,7 +523,6 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
 
             {showNotifications && (
               <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Notifications</p>
@@ -341,7 +550,6 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
                   </div>
                 </div>
 
-                {/* List */}
                 <div className="max-h-80 overflow-y-auto">
                   {isLoadingNotifs ? (
                     <div className="px-4 py-8 text-center text-gray-400 text-sm">
@@ -398,7 +606,6 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
                   )}
                 </div>
 
-                {/* Footer */}
                 <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
                   <Link
                     to="/admin/notifications"
@@ -418,6 +625,7 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
               onClick={() => {
                 setShowDropdown(!showDropdown);
                 setShowNotifications(false);
+                setShowNews(false);
               }}
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
               aria-haspopup="true"
@@ -435,7 +643,7 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
                 </div>
               )}
               <span className="hidden md:block text-sm font-medium text-gray-700">
-                {isLoading && !user ? '…' : firstName}
+                {isLoading && !user ? '...' : firstName}
               </span>
               <svg
                 className={`w-4 h-4 text-gray-500 transition-transform ${
@@ -467,14 +675,14 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
                   )}
                 </div>
                 <Link
-                  to="/my-profile"
+                  to="/admin/my-profile"
                   onClick={() => setShowDropdown(false)}
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 >
                   My Profile
                 </Link>
                 <Link
-                  to="/settings"
+                  to="/admin/settings"
                   onClick={() => setShowDropdown(false)}
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 >
@@ -486,6 +694,13 @@ const AdminTopBar: React.FC<AdminTopBarProps> = ({
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 >
                   Manage Users
+                </Link>
+                <Link
+                  to="/admin/news"
+                  onClick={() => setShowDropdown(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  News &amp; Updates
                 </Link>
                 <div className="border-t border-gray-100">
                   <button

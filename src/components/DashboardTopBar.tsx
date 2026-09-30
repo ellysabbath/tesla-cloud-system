@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { notificationApi } from '../api/api';
-import type { ApiNotification } from '../api/api';
+import { notificationApi, newsApi } from '../api/api';
+import type { ApiNotification, ApiNews } from '../api/api';
 
 // ============================================================
 // Types
@@ -12,7 +12,8 @@ interface DashboardTopBarProps {
   isSidebarOpen: boolean;
 }
 
-const POLL_MS = 60_000; // refresh unread count every 60s
+const POLL_MS = 60_000; // refresh counts every 60s
+const NEWS_SEEN_KEY = 'tesla_news_seen_ids';
 
 // ============================================================
 // Helpers
@@ -37,6 +38,25 @@ const typeColor: Record<string, string> = {
   system: 'bg-gray-100 text-gray-700',
 };
 
+const readSeenNewsIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem(NEWS_SEEN_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeSeenNewsIds = (ids: string[]) => {
+  try {
+    localStorage.setItem(NEWS_SEEN_KEY, JSON.stringify(ids));
+  } catch {
+    /* quota - ignore */
+  }
+};
+
 // ============================================================
 // Component
 // ============================================================
@@ -56,8 +76,15 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoadingNotifs, setIsLoadingNotifs] = useState(false);
 
+  // News
+  const [showNews, setShowNews] = useState(false);
+  const [newsItems, setNewsItems] = useState<ApiNews[]>([]);
+  const [newNewsCount, setNewNewsCount] = useState(0);
+  const [isLoadingNews, setIsLoadingNews] = useState(false);
+
   const profileRef = useRef<HTMLDivElement | null>(null);
   const notifRef = useRef<HTMLDivElement | null>(null);
+  const newsRef = useRef<HTMLDivElement | null>(null);
 
   // ---------- Close dropdowns on outside click ----------
   useEffect(() => {
@@ -69,12 +96,15 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
       if (notifRef.current && !notifRef.current.contains(target)) {
         setShowNotifications(false);
       }
+      if (newsRef.current && !newsRef.current.contains(target)) {
+        setShowNews(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // ---------- Load notifications ----------
+  // ---------- Notifications ----------
   const loadNotifications = useCallback(async () => {
     setIsLoadingNotifs(true);
     try {
@@ -92,7 +122,6 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
     }
   }, []);
 
-  // ---------- Poll unread count only ----------
   const refreshUnreadCount = useCallback(async () => {
     try {
       const res = await notificationApi.list({ unread: true, limit: 1 });
@@ -104,24 +133,65 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
     }
   }, []);
 
-  // Initial load + polling
+  // ---------- News ----------
+  const loadNews = useCallback(async () => {
+    setIsLoadingNews(true);
+    try {
+      const res = await newsApi.list({ limit: 20 });
+      if (res.success && Array.isArray(res.data)) {
+        const items = res.data as ApiNews[];
+        setNewsItems(items);
+
+        // Compute "new" count vs. what the user has already seen.
+        const seenIds = new Set(readSeenNewsIds());
+        const newCount = items.filter((n) => !seenIds.has(n.id)).length;
+        setNewNewsCount(newCount);
+      }
+    } catch (err) {
+      console.error('Load news error:', err);
+    } finally {
+      setIsLoadingNews(false);
+    }
+  }, []);
+
+  const refreshNewNewsCount = useCallback(async () => {
+    try {
+      const res = await newsApi.list({ limit: 20 });
+      if (res.success && Array.isArray(res.data)) {
+        const items = res.data as ApiNews[];
+        const seenIds = new Set(readSeenNewsIds());
+        const newCount = items.filter((n) => !seenIds.has(n.id)).length;
+        setNewNewsCount(newCount);
+      }
+    } catch {
+      /* silent */
+    }
+  }, []);
+
+  // ---------- Initial load + polling ----------
   useEffect(() => {
     loadNotifications();
-    const id = setInterval(refreshUnreadCount, POLL_MS);
-    return () => clearInterval(id);
-  }, [loadNotifications, refreshUnreadCount]);
+    loadNews();
 
-  // ---------- Handlers ----------
+    const id = setInterval(() => {
+      refreshUnreadCount();
+      refreshNewNewsCount();
+    }, POLL_MS);
+
+    return () => clearInterval(id);
+  }, [loadNotifications, loadNews, refreshUnreadCount, refreshNewNewsCount]);
+
+  // ---------- Notification handlers ----------
   const handleOpenNotifications = () => {
     const next = !showNotifications;
     setShowNotifications(next);
     setShowProfileDropdown(false);
+    setShowNews(false);
     if (next) loadNotifications();
   };
 
   const handleMarkRead = async (n: ApiNotification) => {
     if (n.is_read) return;
-    // Optimistic
     setNotifications((prev) =>
       prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x))
     );
@@ -129,7 +199,6 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
     try {
       await notificationApi.markRead(n.id);
     } catch {
-      // Revert on error
       setNotifications((prev) =>
         prev.map((x) => (x.id === n.id ? { ...x, is_read: false } : x))
       );
@@ -163,6 +232,32 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
     }
   };
 
+  // ---------- News handlers ----------
+  const handleOpenNews = () => {
+    const next = !showNews;
+    setShowNews(next);
+    setShowProfileDropdown(false);
+    setShowNotifications(false);
+    if (next) {
+      loadNews();
+      // Mark all current items as seen the moment the dropdown opens.
+      const ids = newsItems.map((n) => n.id);
+      const merged = Array.from(new Set([...readSeenNewsIds(), ...ids]));
+      writeSeenNewsIds(merged);
+      setNewNewsCount(0);
+    }
+  };
+
+  const handleOpenNewsPage = () => {
+    // Same as opening the dropdown: mark as seen.
+    const ids = newsItems.map((n) => n.id);
+    const merged = Array.from(new Set([...readSeenNewsIds(), ...ids]));
+    writeSeenNewsIds(merged);
+    setNewNewsCount(0);
+    setShowNews(false);
+    navigate('/news');
+  };
+
   // ---------- Display values ----------
   const displayName = user?.fullName ?? 'Student';
   const displayEmail = user?.email ?? 'student@teslacloud.ac.tz';
@@ -173,6 +268,7 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
     { label: 'My Profile', path: '/my-profile' },
     { label: 'My Courses', path: '/my-courses' },
     { label: 'My Certificates', path: '/my-certificates' },
+    { label: 'News & Updates', path: '/news' },
     { label: 'Settings', path: '/settings' },
   ];
 
@@ -221,8 +317,100 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
           </Link>
         </div>
 
-        {/* Right side: notifications + profile */}
+        {/* Right side: news + notifications + profile */}
         <div className="flex items-center gap-2">
+          {/* ---------- News ---------- */}
+          <div className="relative" ref={newsRef}>
+            <button
+              onClick={handleOpenNews}
+              className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              aria-label="News and updates"
+              aria-haspopup="true"
+              aria-expanded={showNews}
+            >
+              <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+              </svg>
+
+              {newNewsCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 bg-blue-600 text-white text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                  {newNewsCount > 9 ? '9+' : newNewsCount}
+                </span>
+              )}
+            </button>
+
+            {showNews && (
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">News &amp; Updates</p>
+                    {newNewsCount > 0 && (
+                      <p className="text-xs text-gray-500">{newNewsCount} new</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleOpenNewsPage}
+                    className="text-xs text-black hover:underline"
+                  >
+                    View all
+                  </button>
+                </div>
+
+                <div className="max-h-96 overflow-y-auto">
+                  {isLoadingNews ? (
+                    <div className="px-4 py-8 text-center text-gray-400 text-sm">
+                      Loading...
+                    </div>
+                  ) : newsItems.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                      No news yet.
+                    </div>
+                  ) : (
+                    newsItems.slice(0, 6).map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={handleOpenNewsPage}
+                        className="w-full text-left px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          {n.pinned && (
+                            <span className="text-[10px] font-bold uppercase tracking-wider bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
+                              Pinned
+                            </span>
+                          )}
+                          <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                            {n.category}
+                          </span>
+                          <span className="text-[10px] text-gray-400">
+                            {timeAgo(n.created_at)}
+                          </span>
+                        </div>
+                        <p className="text-sm font-semibold text-gray-900 truncate">
+                          {n.title}
+                        </p>
+                        {n.body && (
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                            {n.body}
+                          </p>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
+                  <button
+                    onClick={handleOpenNewsPage}
+                    className="block w-full text-center text-xs font-medium text-gray-700 hover:text-black"
+                  >
+                    View all news
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* ---------- Notifications ---------- */}
           <div className="relative" ref={notifRef}>
             <button
@@ -246,7 +434,6 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
 
             {showNotifications && (
               <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Notifications</p>
@@ -274,7 +461,6 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
                   </div>
                 </div>
 
-                {/* List */}
                 <div className="max-h-96 overflow-y-auto">
                   {isLoadingNotifs ? (
                     <div className="px-4 py-8 text-center text-gray-400 text-sm">
@@ -325,7 +511,6 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
                   )}
                 </div>
 
-                {/* Footer */}
                 <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
                   <Link
                     to="/notifications"
@@ -345,6 +530,7 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
               onClick={() => {
                 setShowProfileDropdown(!showProfileDropdown);
                 setShowNotifications(false);
+                setShowNews(false);
               }}
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
               aria-haspopup="true"

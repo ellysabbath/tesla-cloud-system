@@ -3,9 +3,9 @@
 // Central API client for Tesla Cloud Institute.
 //
 // - Holds access + refresh tokens (persisted in localStorage).
-// - Attaches Authorization header to authenticated requests.
+// - Attaches the Authorization header to authenticated requests.
 // - Auto-refreshes the access token on 401 and retries once.
-// - Clears tokens and fires "auth:logout" only when refresh fails
+// - Clears tokens and fires "auth:logout" when refresh fails
 //   or the user explicitly logs out.
 
 // ============================================================
@@ -169,11 +169,13 @@ async function request<T = unknown>(
     payload.success = false;
   }
 
+  (payload as Record<string, unknown>).status = res.status;
+
   return payload;
 }
 
 // ============================================================
-// Shared types — auth + user
+// Shared types - auth + user
 // ============================================================
 export interface RegisterData {
   profilePicture: File | null;
@@ -222,7 +224,7 @@ export interface ChangePasswordPayload {
 }
 
 // ============================================================
-// Shared types — admin users
+// Shared types - admin users
 // ============================================================
 export interface AdminUserRow {
   id: string;
@@ -493,20 +495,67 @@ export const authApi = {
   adminUpdateUser: async (
     userId: string,
     payload: AdminUserUpdatePayload
-  ): Promise<ApiResponse> =>
-    request(`/auth/admin/users/${userId}/update/`, {
-      method: 'POST',
+  ): Promise<ApiResponse> => {
+    const path = `/auth/admin/users/${userId}/update/`;
+    const first = await request(path, {
+      method: 'PATCH',
       body: JSON.stringify(payload),
-    }),
+    });
 
-  adminDeleteUser: async (userId: string): Promise<ApiResponse> =>
-    request(`/auth/admin/users/${userId}/delete/`, { method: 'POST' }),
+    const status = (first as Record<string, unknown>).status as
+      | number
+      | undefined;
 
-  adminSuspendUser: async (userId: string): Promise<ApiResponse> =>
-    request(`/auth/admin/users/${userId}/suspend/`, { method: 'POST' }),
+    if (status === 405) {
+      return request(path, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    }
+    return first;
+  },
 
-  adminActivateUser: async (userId: string): Promise<ApiResponse> =>
-    request(`/auth/admin/users/${userId}/activate/`, { method: 'POST' }),
+  adminDeleteUser: async (userId: string): Promise<ApiResponse> => {
+    const path = `/auth/admin/users/${userId}/delete/`;
+    const first = await request(path, { method: 'DELETE' });
+
+    const status = (first as Record<string, unknown>).status as
+      | number
+      | undefined;
+
+    if (status === 405) {
+      return request(path, { method: 'POST' });
+    }
+    return first;
+  },
+
+  adminSuspendUser: async (userId: string): Promise<ApiResponse> => {
+    const path = `/auth/admin/users/${userId}/suspend/`;
+    const first = await request(path, { method: 'PATCH' });
+
+    const status = (first as Record<string, unknown>).status as
+      | number
+      | undefined;
+
+    if (status === 405) {
+      return request(path, { method: 'POST' });
+    }
+    return first;
+  },
+
+  adminActivateUser: async (userId: string): Promise<ApiResponse> => {
+    const path = `/auth/admin/users/${userId}/activate/`;
+    const first = await request(path, { method: 'PATCH' });
+
+    const status = (first as Record<string, unknown>).status as
+      | number
+      | undefined;
+
+    if (status === 405) {
+      return request(path, { method: 'POST' });
+    }
+    return first;
+  },
 };
 
 // ============================================================
@@ -703,7 +752,7 @@ export const enrollmentApi = {
 };
 
 // ============================================================
-// Exams API — types
+// Exams API - types
 // ============================================================
 export interface ApiExamInstruction {
   id: string;
@@ -788,9 +837,6 @@ export interface ExamPayload {
   status?: 'draft' | 'published' | 'closed';
 }
 
-// ============================================================
-// Exam question — WRITE payload
-// ============================================================
 export interface ExamQuestionPayload {
   type: string;
   text?: string;
@@ -804,9 +850,6 @@ export interface ExamQuestionPayload {
   acceptAlternatives?: string[];
 }
 
-// ============================================================
-// Exams API — client
-// ============================================================
 export const examApi = {
   list: async (params?: {
     status?: string;
@@ -890,7 +933,7 @@ export const examApi = {
 };
 
 // ============================================================
-// Attempts API — types
+// Attempts API - types
 // ============================================================
 export interface ApiAttempt {
   id: string;
@@ -1022,13 +1065,10 @@ export const attemptApi = {
 };
 
 // ============================================================
-// Certificates API — types
-// ============================================================
-// ============================================================
-// Certificates API — types
+// Certificates API - types
 // ============================================================
 export interface ApiCertificate {
-  id: string;                          // UUID — the verification ID
+  id: string;
   certificate_number: string;
   courseId: string;
   courseTitle: string;
@@ -1038,21 +1078,17 @@ export interface ApiCertificate {
   final_percentage: string | null;
   verification_url: string | null;
 
-  /** Clean PNG, base64 data URL. */
   image_data_url: string | null;
-  /** Watermarked PNG, base64 data URL. */
   image_watermarked_data_url: string | null;
 
   status: 'issued' | 'pending' | 'revoked' | string;
 
-  /** Admin publish flag. */
   is_published: boolean;
 
   issued_at: string;
   revoked_at: string | null;
   revoke_reason: string | null;
 
-  /** Attached by the backend at fetch time. */
   displayImageDataUrl?: string | null;
   watermarkedImageDataUrl?: string | null;
   cleanImageDataUrl?: string | null;
@@ -1082,19 +1118,13 @@ export interface ApiCertificateVerifyResult {
   reason?: string;
 }
 
-// ============================================================
-// Certificates API — client
-// ============================================================
 export const certificateApi = {
-  /** Owner's certificates, synced against enrollments. */
   mine: async (): Promise<ApiResponse<ApiCertificate[]>> =>
     request<ApiCertificate[]>('/certificates/mine/'),
 
-  /** Single certificate by UUID (owner or admin). */
   get: async (id: string): Promise<ApiResponse<ApiCertificate>> =>
     request<ApiCertificate>(`/certificates/${id}/`),
 
-  /** Template preview for a course the user is not enrolled in. */
   preview: async (
     courseId: string
   ): Promise<ApiResponse<ApiCertificatePreview>> =>
@@ -1104,7 +1134,6 @@ export const certificateApi = {
       true
     ),
 
-  /** Public verification by UUID — no auth needed. */
   verify: async (
     certificateId: string
   ): Promise<ApiResponse<ApiCertificateVerifyResult>> =>
@@ -1114,7 +1143,6 @@ export const certificateApi = {
       false
     ),
 
-  /** Admin: read-only list of every certificate. */
   adminList: async (params?: {
     search?: string;
     status?: string;
@@ -1134,7 +1162,6 @@ export const certificateApi = {
     );
   },
 
-  /** Admin: hide (unpublish) or publish a certificate. */
   adminSetPublished: async (
     certificateId: string,
     isPublished: boolean
@@ -1149,23 +1176,17 @@ export const certificateApi = {
     ),
 };
 
-
 // ============================================================
-// Notifications API — types
+// Notifications API - types
 // ============================================================
 export interface ApiNotification {
   id: string;
   title: string;
   body: string | null;
-  type: string;                // exam_result | payment | certificate | system
+  type: string;
   is_read: boolean;
   read_at: string | null;
   created_at: string;
-}
-
-export interface ApiNotificationList {
-  items: ApiNotification[];
-  unreadCount: number;
 }
 
 export interface ApiNotificationPrefs {
@@ -1187,10 +1208,9 @@ export interface ApiPrivacySettings {
 }
 
 // ============================================================
-// Notifications API — client
+// Notifications API - client
 // ============================================================
 export const notificationApi = {
-  /** List my notifications. Pass `{ unread: true }` to filter unread. */
   list: async (params?: {
     unread?: boolean;
     limit?: number;
@@ -1206,7 +1226,6 @@ export const notificationApi = {
       true
     );
 
-    // Backend also returns `unreadCount` at the top level — keep it.
     return {
       ...res,
       unreadCount:
@@ -1216,7 +1235,6 @@ export const notificationApi = {
     };
   },
 
-  /** Mark a single notification as read. */
   markRead: async (
     notificationId: string
   ): Promise<ApiResponse<ApiNotification>> =>
@@ -1226,7 +1244,6 @@ export const notificationApi = {
       true
     ),
 
-  /** Mark all my notifications as read. */
   markAllRead: async (): Promise<ApiResponse<{ updated: number }>> =>
     request<{ updated: number }>(
       `/notifications/read-all/`,
@@ -1234,7 +1251,6 @@ export const notificationApi = {
       true
     ),
 
-  /** Delete a single notification. */
   remove: async (notificationId: string): Promise<ApiResponse> =>
     request(
       `/notifications/${notificationId}/delete/`,
@@ -1242,7 +1258,6 @@ export const notificationApi = {
       true
     ),
 
-  /** Delete all my notifications. */
   clear: async (): Promise<ApiResponse<{ deleted: number }>> =>
     request<{ deleted: number }>(
       `/notifications/clear/`,
@@ -1250,7 +1265,6 @@ export const notificationApi = {
       true
     ),
 
-  // ---------- Preferences ----------
   getPrefs: async (): Promise<ApiResponse<ApiNotificationPrefs>> =>
     request<ApiNotificationPrefs>('/notifications/prefs/'),
 
@@ -1263,7 +1277,6 @@ export const notificationApi = {
       true
     ),
 
-  // ---------- Privacy ----------
   getPrivacy: async (): Promise<ApiResponse<ApiPrivacySettings>> =>
     request<ApiPrivacySettings>('/notifications/privacy/'),
 
@@ -1276,7 +1289,6 @@ export const notificationApi = {
       true
     ),
 
-  // ---------- Admin ----------
   adminBroadcast: async (payload: {
     title: string;
     body?: string;
@@ -1288,6 +1300,120 @@ export const notificationApi = {
       { method: 'POST', body: JSON.stringify(payload) },
       true
     ),
+};
+
+// ============================================================
+// News API - types
+// ============================================================
+export interface ApiNews {
+  id: string;
+  title: string;
+  body: string | null;
+  category: 'course' | 'exam' | 'payment' | 'system' | 'general' | string;
+  is_published: boolean;
+  pinned: boolean;
+  author_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NewsPayload {
+  title: string;
+  body?: string;
+  category?: string;
+  is_published?: boolean;
+  pinned?: boolean;
+}
+
+// ============================================================
+// News API - client
+// ============================================================
+export const newsApi = {
+  // Public list of published news.
+  // withAuth = true so the dashboard can fetch it for logged-in users
+  // without hitting 401 on the notifications namespace.
+  list: async (params?: {
+    category?: string;
+    limit?: number;
+  }): Promise<ApiResponse<ApiNews[]>> => {
+    const qs = new URLSearchParams();
+    if (params?.category && params.category !== 'all')
+      qs.set('category', params.category);
+    if (params?.limit) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<ApiNews[]>(
+      `/notifications/news/${suffix}`,
+      { method: 'GET' },
+      true
+    );
+  },
+
+  get: async (id: string): Promise<ApiResponse<ApiNews>> =>
+    request<ApiNews>(
+      `/notifications/news/${id}/`,
+      { method: 'GET' },
+      true
+    ),
+
+  // ---------- Admin ----------
+  adminList: async (params?: {
+    search?: string;
+    category?: string;
+    status?: 'published' | 'hidden' | 'all';
+  }): Promise<ApiResponse<ApiNews[]>> => {
+    const qs = new URLSearchParams();
+    if (params?.search) qs.set('search', params.search);
+    if (params?.category && params.category !== 'all')
+      qs.set('category', params.category);
+    if (params?.status && params.status !== 'all')
+      qs.set('status', params.status);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<ApiNews[]>(
+      `/notifications/admin/news/${suffix}`,
+      { method: 'GET' },
+      true
+    );
+  },
+
+  adminCreate: async (payload: NewsPayload): Promise<ApiResponse<ApiNews>> =>
+    request<ApiNews>(
+      '/notifications/admin/news/',
+      { method: 'POST', body: JSON.stringify(payload) },
+      true
+    ),
+
+  adminUpdate: async (
+    id: string,
+    payload: Partial<NewsPayload>
+  ): Promise<ApiResponse<ApiNews>> => {
+    const path = `/notifications/admin/news/${id}/`;
+    const first = await request<ApiNews>(path, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    const status = (first as Record<string, unknown>).status as
+      | number
+      | undefined;
+    if (status === 405) {
+      return request<ApiNews>(path, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    }
+    return first;
+  },
+
+  adminDelete: async (id: string): Promise<ApiResponse> => {
+    const path = `/notifications/admin/news/${id}/`;
+    const first = await request(path, { method: 'DELETE' });
+    const status = (first as Record<string, unknown>).status as
+      | number
+      | undefined;
+    if (status === 405) {
+      return request(path, { method: 'POST' });
+    }
+    return first;
+  },
 };
 
 // ============================================================
@@ -1311,11 +1437,12 @@ export default {
   examApi,
   attemptApi,
   certificateApi,
+  notificationApi,
+  newsApi,
   setTokens,
   getAccessToken,
   getRefreshToken,
   clearTokens,
-  notificationApi,   
   isAuthenticated,
   getMyRegistrationVideo,
   fileToBase64,
