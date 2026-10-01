@@ -1,4 +1,4 @@
-/* 1. Font imports MUST come first (before Tailwind) */
+/* 1. Font imports MUST come first */
 @import url('https://fonts.googleapis.com/css2?family=Bell+MT&display=swap');
 
 /* 2. Tailwind v4 single import */
@@ -18,7 +18,7 @@
   --color-success: #00aa00;
 }
 
-/* 4. Base layer — global element styles */
+/* 4. Base layer - global element styles */
 @layer base {
   *,
   *::before,
@@ -31,11 +31,58 @@
   html {
     font-family: 'Bell MT', 'Times New Roman', serif;
     line-height: 1.6;
+
+    /* Responsive: prevents iOS from auto-enlarging text in landscape */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+
+    /* Smooth scrolling for in-page anchors */
+    scroll-behavior: smooth;
   }
 
   body {
     color: var(--color-primary);
     background-color: var(--color-secondary);
+
+    /* Prevent horizontal scroll from any overflowing child */
+    overflow-x: hidden;
+
+    /* Slightly smaller base font on very small phones */
+    font-size: 15px;
+  }
+
+  @media (min-width: 640px) {
+    body {
+      font-size: 16px;
+    }
+  }
+
+  /* Images and media never overflow their container */
+  img,
+  picture,
+  video,
+  canvas,
+  svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Prevent long words / URLs from forcing horizontal scroll */
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  li,
+  span,
+  a,
+  td,
+  th {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
   }
 
   a {
@@ -46,5 +93,55 @@
   button {
     cursor: pointer;
     font-family: inherit;
+
+    /* Remove the default gray on mobile */
+    background: none;
+    border: none;
+
+    /* Remove blue tap highlight on iOS */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+    font-size: 1rem; /* prevents iOS zoom on focus */
+    max-width: 100%;
+  }
+
+  /* Remove tap highlight globally */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Respect users who prefer reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Nicer scrollbars on desktop, hidden on mobile */
+  @media (min-width: 1024px) {
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--color-gray-light);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--color-gray-medium);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--color-gray-dark);
+    }
   }
 }
